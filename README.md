@@ -20,9 +20,13 @@ pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 27 c
 pnpm dev              # http://localhost:3000
 ```
 
-Needs Node 20.11+ and pnpm 10+. **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** covers the rest:
-production build, ports, the optional Postgres path, agent configuration and where secrets live,
-scheduled monitoring, backup and reset, and troubleshooting.
+Needs Node 20.11+ and pnpm 10+.
+
+- **[RUNNING.md](RUNNING.md)** — the step-by-step local guide: prerequisites, the seeded accounts,
+  and a first walkthrough that takes a consumer request through triage, authoring, quorum,
+  approval decay and veto.
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — the operational guide: production build, ports,
+  the optional Postgres path, where secrets live, scheduled monitoring, backup and troubleshooting.
 
 Sign in with any seeded account and the password `adpm`:
 

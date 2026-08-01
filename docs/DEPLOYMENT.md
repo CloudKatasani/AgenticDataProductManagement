@@ -5,7 +5,9 @@ connection. This guide covers the whole path: first run, production build, the o
 path, agent configuration, scheduled monitoring, backup and reset, and what to do when something
 does not work.
 
-If you only want it running, read §1 and stop.
+If you only want it running, read [RUNNING.md](../RUNNING.md) instead — it is the step-by-step
+version of §1, with the seeded accounts and a guided first walkthrough. This document is the
+operational reference behind it.
 
 ---
 
