@@ -1,0 +1,204 @@
+key: banking
+name: Banking
+industry: Retail and commercial banking
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a retail and commercial bank. Illustrative and editable —
+  not authoritative, and not legal or regulatory advice.
+editable: true
+
+domains:
+  - { key: customer-onboarding, name: Customer & Onboarding, description: Identity, KYC and relationship opening. }
+  - { key: deposits, name: Deposits, description: Current and savings accounts and balances. }
+  - { key: lending, name: Lending, description: Origination, servicing and arrears. }
+  - { key: payments, name: Payments, description: Domestic and cross-border payment flows. }
+  - { key: cards, name: Cards, description: Issuing, authorisation and disputes. }
+  - { key: financial-crime, name: Financial Crime, description: AML, sanctions and fraud. }
+  - { key: risk-capital, name: Risk & Capital, description: Credit, market and capital reporting. }
+  - { key: branch-channel, name: Branch & Channel, description: Servicing across branch, app and contact centre. }
+
+conformedBackbone:
+  description: Party to product to arrangement to transaction.
+  entities:
+    - { key: party, name: Party }
+    - { key: customer, name: Customer }
+    - { key: arrangement, name: Arrangement }
+    - { key: account, name: Account }
+    - { key: transaction, name: Transaction }
+  links:
+    - { from: Party, to: Customer, cardinality: ONE_TO_ONE }
+    - { from: Customer, to: Arrangement, cardinality: ONE_TO_MANY }
+    - { from: Arrangement, to: Account, cardinality: ONE_TO_MANY }
+    - { from: Account, to: Transaction, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: party, name: Party, description: A legal or natural person known to the bank. }
+  - { key: customer, name: Customer, description: A party in a banking relationship. }
+  - { key: arrangement, name: Arrangement, description: A contracted product holding. }
+  - { key: account, name: Account, description: A ledger against an arrangement. }
+  - { key: transaction, name: Transaction, description: A movement of value. }
+  - { key: loan, name: Loan, description: A credit arrangement with a repayment schedule. }
+  - { key: collateral, name: Collateral, description: Security pledged against a loan. }
+  - { key: card, name: Card, description: A payment instrument issued to a customer. }
+  - { key: alert, name: Alert, description: A financial-crime or fraud detection event. }
+  - { key: branch, name: Branch, description: A physical servicing location. }
+  - { key: exposure, name: Exposure, description: Aggregated credit risk to a counterparty. }
+
+controls:
+  - { key: kyc-refresh, name: KYC refresh, category: Regulatory, jurisdiction: General, requirement: Customer due diligence is refreshed on a risk-based cycle and evidenced. }
+  - { key: aml-monitoring, name: AML transaction monitoring, category: Regulatory, jurisdiction: General, requirement: Transaction monitoring alerts are retained with their disposition and reviewer. }
+  - { key: sanctions-screening, name: Sanctions screening, category: Regulatory, jurisdiction: General, requirement: Parties and payments are screened against current sanctions lists before release. }
+  - { key: credit-decision-explainability, name: Credit decision explainability, category: Governance, jurisdiction: General, requirement: Automated credit decisions must be explainable and overridable by a named human. }
+  - { key: pii-minimisation, name: Personal data minimisation, category: Privacy, jurisdiction: General, requirement: Analytical products exclude direct identifiers unless the purpose requires them. }
+  - { key: retention-financial, name: Financial record retention, category: Records, jurisdiction: General, requirement: Transaction records are retained for the statutory period and then destroyed. }
+  - { key: bcbs-lineage, name: Risk data lineage, category: Regulatory, jurisdiction: General, requirement: Risk and capital figures are traceable to source with documented lineage. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Customer data remains within the licensed operating region. }
+
+starterMetrics:
+  - { name: active_customers, label: Active customers, definition: Customers with a live arrangement., grain: customer }
+  - { name: deposit_balance, label: Deposit balance, definition: Aggregate deposit balances., grain: account-day }
+  - { name: loan_book_value, label: Loan book value, definition: Outstanding principal across loans., grain: portfolio-month }
+  - { name: arrears_rate, label: Arrears rate, definition: Share of loans 30 days or more past due., grain: portfolio-month }
+  - { name: net_interest_margin, label: Net interest margin, definition: Interest income less interest expense over earning assets., grain: portfolio-month }
+  - { name: payment_volume, label: Payment volume, definition: Count of payments processed., grain: day }
+  - { name: fraud_loss, label: Fraud loss, definition: Value of confirmed fraud losses., grain: month }
+  - { name: alert_false_positive_rate, label: Alert false positive rate, definition: Share of AML alerts closed with no action., grain: month }
+  - { name: onboarding_cycle_time, label: Onboarding cycle time, definition: Elapsed time from application to account opening., grain: application }
+  - { name: card_authorisation_rate, label: Card authorisation rate, definition: Share of card authorisations approved., grain: day }
+
+sampleDecisions:
+  - consumerPersona: Financial Crime Analyst
+    decision: Which AML alerts to work first this shift
+    cadence: Daily
+    currentWorkaround: Alerts worked in the order the system produced them
+    latencyTolerance: Hourly
+    consequence: High-risk alerts age while low-value ones consume analyst time.
+    questions:
+      - Which open alerts carry the highest risk score?
+      - Which relate to a party already under review?
+      - What share of last month's alerts closed with no action?
+  - consumerPersona: Collections Manager
+    decision: Which arrears cases to contact this week
+    cadence: Weekly
+    currentWorkaround: A monthly arrears extract sorted by balance
+    latencyTolerance: Daily
+    consequence: Contact goes to the largest balances rather than the most recoverable ones.
+    questions:
+      - Which loans crossed 30 days past due this week?
+      - Which of those customers have a history of self-cure?
+      - What is the expected recovery by contact strategy?
+  - consumerPersona: Product Manager, Deposits
+    decision: Which deposit segments to target with a rate change
+    cadence: Monthly
+    currentWorkaround: Finance and product each keep their own balance extract
+    latencyTolerance: Weekly
+    consequence: Rate changes are set on figures the two teams cannot reconcile.
+    questions:
+      - How have balances moved by segment over six months?
+      - Which segments are most rate-sensitive?
+      - What is the margin impact of a 25 basis point change?
+
+platformProfiles:
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+  - { key: on-prem, name: On-premises warehouse, bronze: Landing schema, silver: Staging schema, gold: Presentation schema, ingestion: Scheduled ETL, orchestration: Enterprise scheduler }
+
+glossary:
+  - { term: Arrangement, definition: A contracted product holding between the bank and a customer. }
+  - { term: KYC, definition: Know Your Customer — the due diligence performed on a party. }
+  - { term: Self-cure, definition: An arrears case that returns to order without intervention. }
+  - { term: Net interest margin, definition: Interest earned less interest paid, over earning assets. }
+
+seedProducts:
+  - key: aml-alert-triage
+    name: AML Alert Triage
+    domainKey: financial-crime
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Open financial-crime alerts ranked by risk with party history attached.
+    persona: Financial Crime Analyst
+    decision: Which AML alerts to work first this shift
+    cadence: Daily
+    workaround: Alerts worked in whatever order the detection system produced them
+    consequence: High-risk alerts age while low-value ones consume analyst time.
+    questions:
+      - Which open alerts carry the highest risk score?
+      - Which relate to a party already under review?
+      - What share of last month's alerts closed with no action?
+    sources: [{ name: Monitoring alert extract, system: AML platform }, { name: Party master, system: Core banking }]
+    entities:
+      - { name: Alert, key: alert_id, attributes: [alert_id, party_id, risk_score, raised_at, scenario_code, status] }
+      - { name: Party, key: party_id, attributes: [party_id, party_name*, date_of_birth*, risk_rating] }
+    metrics:
+      - { name: open_alerts, label: Open alerts, definition: Alerts not yet dispositioned., grain: alert }
+      - { name: alert_false_positive_rate, label: Alert false positive rate, definition: Share of alerts closed with no action., grain: month }
+    controls: [aml-monitoring, sanctions-screening, pii-minimisation, residency]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Hourly
+    qualityScore: 92
+    costToServeUsdPerMonth: 640
+    platformProfileKey: warehouse
+    value: { statement: Reduce median alert age at closure from 9 days to 4, baseline: 9, unit: days, expectedChange: -5, method: Median alert age measured monthly from the case system, date: '2027-01-31', realised: false }
+    telemetry: { consumers: 28, queries30d: 640, sessions30d: 300, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: arrears-recovery
+    name: Arrears & Recovery
+    domainKey: lending
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Loans in arrears with self-cure likelihood and expected recovery by strategy.
+    persona: Collections Manager
+    decision: Which arrears cases to contact this week
+    cadence: Weekly
+    workaround: A monthly arrears extract sorted by outstanding balance
+    consequence: Contact effort goes to the largest balances rather than the most recoverable cases.
+    questions:
+      - Which loans crossed 30 days past due this week?
+      - Which of those customers have a history of self-cure?
+      - What is the expected recovery by contact strategy?
+    sources: [{ name: Loan servicing extract, system: Core banking }]
+    entities:
+      - { name: Loan, key: loan_id, attributes: [loan_id, customer_id, outstanding_amount, days_past_due, product_code, opened_at] }
+      - { name: Customer, key: customer_id, attributes: [customer_id, customer_name*, contact_phone*, segment] }
+    metrics:
+      - { name: arrears_rate, label: Arrears rate, definition: Share of loans 30 days or more past due., grain: portfolio-month }
+      - { name: expected_recovery, label: Expected recovery, definition: Modelled recovery value by contact strategy., grain: loan }
+    controls: [credit-decision-explainability, pii-minimisation, retention-financial]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 380
+    platformProfileKey: warehouse
+    value: { statement: Improve 90-day recovery rate by four percentage points, baseline: 31, unit: percent recovered within 90 days, expectedChange: 4, method: Cohort comparison against the prior year, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 17, queries30d: 300, sessions30d: 120, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: deposit-balances
+    name: Deposit Balances
+    domainKey: deposits
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: One certified deposit balance series for finance, product and treasury.
+    persona: Product Manager, Deposits
+    decision: Which deposit segments to target with a rate change
+    cadence: Monthly
+    workaround: Finance and product each maintain their own balance extract
+    consequence: Rate decisions are argued over figures the two teams cannot reconcile.
+    questions:
+      - How have balances moved by segment over six months?
+      - Which segments are most rate-sensitive?
+      - What is the margin impact of a 25 basis point change?
+    sources: [{ name: Deposit ledger extract, system: Core banking }]
+    entities:
+      - { name: Account, key: account_id, attributes: [account_id, customer_id, product_code, balance_amount, rate_pct, opened_at] }
+    metrics:
+      - { name: deposit_balance, label: Deposit balance, definition: Aggregate deposit balances., grain: account-day }
+      - { name: net_interest_margin, label: Net interest margin, definition: Interest income less expense over earning assets., grain: portfolio-month }
+    controls: [bcbs-lineage, retention-financial, residency]
+    patterns: [certified-dashboard, self-serve-exploration, conversational, bulk-extract]
+    freshness: Daily by 07:00
+    qualityScore: 96
+    costToServeUsdPerMonth: 210
+    platformProfileKey: warehouse
+    value: { statement: End the monthly reconciliation between finance and product balance figures, baseline: 12, unit: hours per month spent reconciling, expectedChange: -12, method: Time recorded by both teams, date: '2026-11-30', realised: true, measured: 0.5 }
+    telemetry: { consumers: 52, queries30d: 1100, sessions30d: 420, daysSinceLastUse: 1, freshnessBreaches30d: 0 }

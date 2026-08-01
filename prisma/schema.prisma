@@ -1,0 +1,659 @@
+// Agentic Data Product Management (ADPM) — data model.
+//
+// Conventions that are load-bearing, not stylistic:
+//   * SQLite is the default local store, so enumerations are String columns whose
+//     permitted values are defined once in src/lib/domain/enums.ts and validated by Zod.
+//   * Structured payloads are stored as JSON text in `*Json` columns and parsed at the
+//     boundary — never read raw in the UI.
+//   * ArtifactVersion, AuditEvent and AgentAction are append-only. Nothing is hard-deleted;
+//     entities that can leave circulation carry `archivedAt`.
+//   * Gate is a first-class entity. There is deliberately no gate/approval status field on
+//     DataProduct — `currentStage` is a progress pointer, never an approval record.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id                     String   @id @default(cuid())
+  slug                   String   @unique
+  name                   String
+  packKey                String
+  triageSlaHours         Int      @default(48)
+  agentsEnabled          Boolean  @default(false)
+  agentsMaySeeSampleData Boolean  @default(false)
+  agentBudgetUsd         Float    @default(25)
+  agentSpendUsd          Float    @default(0)
+  prioritisationModel    String   @default("WSJF_REUSE")
+  createdAt              DateTime @default(now())
+  archivedAt             DateTime?
+
+  domains             Domain[]
+  roleAssignments     RoleAssignment[]
+  requests            ProductRequest[]
+  products            DataProduct[]
+  tasks               Task[]
+  auditEvents         AuditEvent[]
+  agentActions        AgentAction[]
+  maturityAssessments MaturityAssessment[]
+  agentSettings       AgentSetting[]
+}
+
+model Domain {
+  id          String  @id @default(cuid())
+  workspaceId String
+  key         String
+  name        String
+  description String  @default("")
+  archivedAt  DateTime?
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id])
+  products  DataProduct[]
+  requests  ProductRequest[]
+  roleAssignments RoleAssignment[]
+
+  @@unique([workspaceId, key])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  title        String    @default("")
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  archivedAt   DateTime?
+
+  roleAssignments  RoleAssignment[]
+  requests         ProductRequest[]   @relation("RequestRequester")
+  triagedRequests  ProductRequest[]   @relation("RequestTriager")
+  requestMessages  RequestMessage[]
+  ownedProducts    DataProduct[]      @relation("ProductOwner")
+  stewardedProducts DataProduct[]     @relation("ProductSteward")
+  artifactVersions ArtifactVersion[]
+  approvals        Approval[]
+  comments         Comment[]          @relation("CommentAuthor")
+  resolvedComments Comment[]          @relation("CommentResolver")
+  tasks            Task[]
+  auditEvents      AuditEvent[]
+  changeRequests   ChangeRequest[]    @relation("ChangeRequestRaiser")
+  dispositionedChangeRequests ChangeRequest[] @relation("ChangeRequestDispositioner")
+  accessRequests   AccessRequest[]    @relation("AccessRequester")
+  accessDecisions  AccessRequest[]    @relation("AccessDecider")
+  feedback         Feedback[]
+  valueMeasurements ValueMeasurement[]
+  maturityAssessments MaturityAssessment[]
+  agentActionsInitiated AgentAction[] @relation("AgentActionInitiator")
+  agentActionsDispositioned AgentAction[] @relation("AgentActionDispositioner")
+  proposalDispositions AgentProposal[]
+  fieldProvenance  FieldProvenance[]
+  prioritisationOverrides PrioritisationOverride[]
+}
+
+/// Roles are seeded from src/lib/domain/roles.ts. The table exists so assignments can be
+/// foreign-keyed and so Admin can inspect them; the registry remains the source of truth.
+model Role {
+  id          String @id
+  key         String @unique
+  name        String
+  door        String
+  owns        String
+  description String @default("")
+  sortOrder   Int    @default(0)
+
+  assignments RoleAssignment[]
+}
+
+model RoleAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  roleId      String
+  workspaceId String
+  domainId    String?
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+  role      Role      @relation(fields: [roleId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  domain    Domain?   @relation(fields: [domainId], references: [id])
+
+  @@unique([userId, roleId, workspaceId, domainId])
+  @@index([workspaceId, roleId])
+}
+
+model ProductRequest {
+  id          String @id @default(cuid())
+  workspaceId String
+  domainId    String?
+  requesterId String
+  reference   String @unique
+  title       String
+  state       String @default("DRAFT")
+
+  // Intake wizard answers — screen by screen.
+  decision            String @default("")
+  consumerRole        String @default("")
+  peopleAffected      Int    @default(1)
+  cadence             String @default("")
+  currentWorkaround   String @default("")
+  timeTakenToday      String @default("")
+  questionsJson       String @default("[]")
+  stakes              String @default("")
+  quantifiedImpact    String @default("")
+  requiredFreshness   String @default("")
+  preferredPatternKey String @default("")
+  sensitivityNotes    String @default("")
+
+  submittedAt   DateTime?
+  slaDueAt      DateTime?
+  triagedAt     DateTime?
+  triagedById   String?
+  declineReason String?
+  mergedIntoRequestId String?
+  mergedIntoProductId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  archivedAt    DateTime?
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id])
+  domain    Domain?          @relation(fields: [domainId], references: [id])
+  requester User             @relation("RequestRequester", fields: [requesterId], references: [id])
+  triagedBy User?            @relation("RequestTriager", fields: [triagedById], references: [id])
+  messages  RequestMessage[]
+  product   DataProduct?
+  tasks     Task[]
+
+  @@index([workspaceId, state])
+}
+
+model RequestMessage {
+  id        String   @id @default(cuid())
+  requestId String
+  authorId  String
+  kind      String   @default("REPLY")
+  body      String
+  createdAt DateTime @default(now())
+
+  request ProductRequest @relation(fields: [requestId], references: [id])
+  author  User           @relation(fields: [authorId], references: [id])
+
+  @@index([requestId])
+}
+
+model DataProduct {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  domainId     String
+  requestId    String?   @unique
+  key          String
+  name         String
+  description  String    @default("")
+  archetype    String    @default("ENTITY_MASTER")
+  tier         String    @default("CONSUMER_ALIGNED")
+  status       String    @default("IN_PROGRESS")
+  currentStage Int       @default(1)
+  ownerId      String
+  stewardId    String?
+  blueprintKey String?
+  semanticVersion String @default("0.1.0")
+  publishedAt  DateTime?
+  retiredAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  archivedAt   DateTime?
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id])
+  domain    Domain          @relation(fields: [domainId], references: [id])
+  request   ProductRequest? @relation(fields: [requestId], references: [id])
+  owner     User            @relation("ProductOwner", fields: [ownerId], references: [id])
+  steward   User?           @relation("ProductSteward", fields: [stewardId], references: [id])
+
+  stageRuns       StageRun[]
+  artifacts       Artifact[]
+  gates           Gate[]
+  comments        Comment[]
+  tasks           Task[]
+  auditEvents     AuditEvent[]
+  changeRequests  ChangeRequest[]
+  patternBindings ConsumptionPatternBinding[]
+  accessRequests  AccessRequest[]
+  feedback        Feedback[]
+  valueMeasurements ValueMeasurement[]
+  agentActions    AgentAction[]
+  agentProposals  AgentProposal[]
+  prioritisation  PrioritisationOverride[]
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, status])
+}
+
+/// Projection of the 12-stage registry (src/lib/lifecycle/stages.ts) for referential use.
+model Stage {
+  number  Int    @id
+  key     String @unique
+  name    String
+  purpose String
+}
+
+model StageRun {
+  id          String    @id @default(cuid())
+  productId   String
+  stageNumber Int
+  attempt     Int       @default(1)
+  state       String    @default("DRAFT")
+  openedAt    DateTime  @default(now())
+  submittedAt DateTime?
+  closedAt    DateTime?
+
+  product DataProduct @relation(fields: [productId], references: [id])
+  gate    Gate?
+
+  @@unique([productId, stageNumber, attempt])
+  @@index([productId, stageNumber])
+}
+
+model Artifact {
+  id          String    @id @default(cuid())
+  productId   String
+  type        String
+  name        String
+  stageNumber Int
+  archivedAt  DateTime?
+
+  product  DataProduct       @relation(fields: [productId], references: [id])
+  versions ArtifactVersion[]
+  comments Comment[]
+  proposals AgentProposal[]
+
+  @@unique([productId, type])
+  @@index([productId, stageNumber])
+}
+
+/// Append-only. A commit never mutates a previous row.
+model ArtifactVersion {
+  id          String   @id @default(cuid())
+  artifactId  String
+  version     Int
+  contentJson String
+  contentHash String
+  message     String   @default("")
+  createdById String
+  createdAt   DateTime @default(now())
+  mirrorPath  String   @default("")
+
+  artifact   Artifact          @relation(fields: [artifactId], references: [id])
+  createdBy  User              @relation(fields: [createdById], references: [id])
+  provenance FieldProvenance[]
+
+  @@unique([artifactId, version])
+  @@index([contentHash])
+}
+
+model FieldProvenance {
+  id                String    @id @default(cuid())
+  artifactVersionId String
+  fieldPath         String
+  provenance        String
+  agentId           String?
+  acceptedById      String?
+  acceptedAt        DateTime?
+
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id])
+  acceptedBy      User?           @relation(fields: [acceptedById], references: [id])
+
+  @@unique([artifactVersionId, fieldPath])
+}
+
+/// The approval checkpoint. Only recordDecision() may move `state` to APPROVED.
+model Gate {
+  id            String    @id @default(cuid())
+  productId     String
+  stageNumber   Int
+  stageRunId    String    @unique
+  state         String    @default("PENDING")
+  quorum        Int
+  requiredRoles String
+  vetoRoles     String
+  openedAt      DateTime?
+  decidedAt     DateTime?
+  staleReason   String?
+  staleAt       DateTime?
+
+  product   DataProduct @relation(fields: [productId], references: [id])
+  stageRun  StageRun    @relation(fields: [stageRunId], references: [id])
+  approvals Approval[]
+  tasks     Task[]
+  evidence  GateEvidence[]
+
+  @@index([productId, stageNumber])
+  @@index([state])
+}
+
+/// Which artifact versions an approved gate relied on. Cascade invalidation reads this.
+model GateEvidence {
+  id                String @id @default(cuid())
+  gateId            String
+  artifactId        String
+  artifactVersionId String
+  contentHash       String
+
+  gate Gate @relation(fields: [gateId], references: [id])
+
+  @@unique([gateId, artifactId])
+}
+
+model Approval {
+  id        String   @id @default(cuid())
+  gateId    String
+  userId    String
+  roleKey   String
+  decision  String
+  rationale String   @default("")
+  createdAt DateTime @default(now())
+
+  gate Gate @relation(fields: [gateId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([gateId, userId, roleKey])
+  @@index([gateId])
+}
+
+model Comment {
+  id            String    @id @default(cuid())
+  productId     String
+  stageNumber   Int
+  artifactId    String?
+  fieldPath     String?
+  authorId      String
+  kind          String    @default("REVIEW")
+  body          String
+  parentId      String?
+  agentActionId String?
+  resolvedAt    DateTime?
+  resolvedById  String?
+  createdAt     DateTime  @default(now())
+
+  product    DataProduct @relation(fields: [productId], references: [id])
+  artifact   Artifact?   @relation(fields: [artifactId], references: [id])
+  author     User        @relation("CommentAuthor", fields: [authorId], references: [id])
+  resolvedBy User?       @relation("CommentResolver", fields: [resolvedById], references: [id])
+  parent     Comment?    @relation("CommentThread", fields: [parentId], references: [id])
+  replies    Comment[]   @relation("CommentThread")
+
+  @@index([productId, stageNumber])
+}
+
+model Task {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  productId        String?
+  requestId        String?
+  gateId           String?
+  kind             String
+  title            String
+  detail           String    @default("")
+  assigneeRoleKey  String?
+  assigneeUserId   String?
+  dueAt            DateTime?
+  completedAt      DateTime?
+  completedById    String?
+  createdAt        DateTime  @default(now())
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id])
+  product   DataProduct?    @relation(fields: [productId], references: [id])
+  request   ProductRequest? @relation(fields: [requestId], references: [id])
+  gate      Gate?           @relation(fields: [gateId], references: [id])
+  assignee  User?           @relation(fields: [assigneeUserId], references: [id])
+
+  @@index([workspaceId, completedAt])
+  @@index([assigneeRoleKey])
+}
+
+/// Append-only.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  productId   String?
+  actorId     String?
+  actorType   String   @default("HUMAN")
+  action      String
+  entityType  String
+  entityId    String
+  dataJson    String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id])
+  product   DataProduct? @relation(fields: [productId], references: [id])
+  actor     User?        @relation(fields: [actorId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([productId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model ChangeRequest {
+  id               String    @id @default(cuid())
+  productId        String
+  raisedById       String?
+  raisedByAgentId  String?
+  title            String
+  detail           String    @default("")
+  severity         String    @default("MEDIUM")
+  versionBump      String    @default("PATCH")
+  affectedStages   String    @default("")
+  state            String    @default("OPEN")
+  dispositionById  String?
+  dispositionAt    DateTime?
+  dispositionNote  String    @default("")
+  createdAt        DateTime  @default(now())
+
+  product        DataProduct @relation(fields: [productId], references: [id])
+  raisedBy       User?       @relation("ChangeRequestRaiser", fields: [raisedById], references: [id])
+  dispositionBy  User?       @relation("ChangeRequestDispositioner", fields: [dispositionById], references: [id])
+
+  @@index([productId, state])
+}
+
+model Pack {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  industry      String
+  version       String
+  sourcePath    String
+  contentJson   String
+  changeLogJson String   @default("[]")
+  installedAt   DateTime @default(now())
+  editedAt      DateTime?
+
+  blueprints Blueprint[]
+}
+
+model Blueprint {
+  id          String @id @default(cuid())
+  packId      String
+  key         String
+  name        String
+  archetype   String
+  description String @default("")
+  contentJson String
+
+  pack Pack @relation(fields: [packId], references: [id])
+
+  @@unique([packId, key])
+}
+
+model ConsumptionPatternBinding {
+  id           String   @id @default(cuid())
+  productId    String
+  patternKey   String
+  targeted     Boolean  @default(false)
+  readinessJson String  @default("{}")
+  updatedAt    DateTime @updatedAt
+
+  product DataProduct @relation(fields: [productId], references: [id])
+
+  @@unique([productId, patternKey])
+}
+
+model AccessRequest {
+  id           String    @id @default(cuid())
+  productId    String
+  requesterId  String
+  patternKey   String
+  purpose      String
+  state        String    @default("PENDING")
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String    @default("")
+  createdAt    DateTime  @default(now())
+
+  product   DataProduct @relation(fields: [productId], references: [id])
+  requester User        @relation("AccessRequester", fields: [requesterId], references: [id])
+  decidedBy User?       @relation("AccessDecider", fields: [decidedById], references: [id])
+
+  @@index([productId, state])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  rating    Int
+  comment   String   @default("")
+  sentiment String   @default("NEUTRAL")
+  createdAt DateTime @default(now())
+
+  product DataProduct @relation(fields: [productId], references: [id])
+  user    User        @relation(fields: [userId], references: [id])
+
+  @@index([productId])
+}
+
+model ValueMeasurement {
+  id             String    @id @default(cuid())
+  productId      String
+  hypothesisJson String
+  baseline       Float?
+  measuredValue  Float?
+  unit           String    @default("")
+  state          String    @default("NOT_YET_MEASURABLE")
+  dueAt          DateTime?
+  measuredAt     DateTime?
+  measuredById   String?
+  note           String    @default("")
+  createdAt      DateTime  @default(now())
+
+  product    DataProduct @relation(fields: [productId], references: [id])
+  measuredBy User?       @relation(fields: [measuredById], references: [id])
+
+  @@index([productId])
+}
+
+model MaturityAssessment {
+  id          String   @id @default(cuid())
+  workspaceId String
+  createdById String
+  scoresJson  String
+  notesJson   String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdBy User      @relation(fields: [createdById], references: [id])
+
+  @@index([workspaceId, createdAt])
+}
+
+model PrioritisationOverride {
+  id          String   @id @default(cuid())
+  productId   String
+  score       Float
+  reason      String
+  overriddenById String
+  createdAt   DateTime @default(now())
+
+  product      DataProduct @relation(fields: [productId], references: [id])
+  overriddenBy User        @relation(fields: [overriddenById], references: [id])
+
+  @@index([productId])
+}
+
+/// Per-workspace autonomy configuration. The registry supplies the ceiling; this row may
+/// only lower it. No value here can permit gate approval — see lib/agents/runtime.ts.
+model AgentSetting {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  agentId        String
+  autonomyLevel  String   @default("L1")
+  enabled        Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, agentId])
+}
+
+/// Append-only record of one agent invocation and its human disposition.
+model AgentAction {
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  agentId               String
+  productId             String?
+  stageNumber           Int?
+  trigger               String
+  scopeJson             String    @default("[]")
+  inputHash             String
+  model                 String    @default("none")
+  promptTokens          Int       @default(0)
+  completionTokens      Int       @default(0)
+  estimatedCostUsd      Float     @default(0)
+  outputJson            String    @default("{}")
+  redactedFieldsJson    String    @default("[]")
+  disposition           String    @default("PENDING")
+  dispositionById       String?
+  dispositionAt         DateTime?
+  dispositionNote       String    @default("")
+  initiatedById         String?
+  orchestrationParentId String?
+  durationMs            Int       @default(0)
+  createdAt             DateTime  @default(now())
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id])
+  product       DataProduct? @relation(fields: [productId], references: [id])
+  initiatedBy   User?        @relation("AgentActionInitiator", fields: [initiatedById], references: [id])
+  dispositionBy User?        @relation("AgentActionDispositioner", fields: [dispositionById], references: [id])
+  proposals     AgentProposal[]
+
+  @@index([workspaceId, createdAt])
+  @@index([agentId])
+  @@index([productId])
+}
+
+model AgentProposal {
+  id                String    @id @default(cuid())
+  agentActionId     String
+  productId         String
+  artifactId        String?
+  stageNumber       Int
+  fieldPath         String
+  proposedValueJson String
+  acceptedValueJson String?
+  rationale         String    @default("")
+  state             String    @default("PENDING")
+  dispositionById   String?
+  dispositionAt     DateTime?
+  dispositionNote   String    @default("")
+  createdAt         DateTime  @default(now())
+
+  agentAction   AgentAction @relation(fields: [agentActionId], references: [id])
+  product       DataProduct @relation(fields: [productId], references: [id])
+  artifact      Artifact?   @relation(fields: [artifactId], references: [id])
+  dispositionBy User?       @relation(fields: [dispositionById], references: [id])
+
+  @@index([productId, stageNumber, state])
+}

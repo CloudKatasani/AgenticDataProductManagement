@@ -1,0 +1,204 @@
+key: insurance
+name: Insurance
+industry: General and life insurance
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a general and life insurer. Illustrative and editable —
+  not authoritative, and not legal or regulatory advice.
+editable: true
+
+domains:
+  - { key: customer-policyholder, name: Customer & Policyholder, description: Who is insured and who holds the contract. }
+  - { key: underwriting, name: Underwriting, description: Risk selection, rating and quote-to-bind. }
+  - { key: policy-administration, name: Policy Administration, description: Issuance, endorsement, renewal and cancellation. }
+  - { key: claims, name: Claims, description: Notification, assessment, settlement and recovery. }
+  - { key: reinsurance, name: Reinsurance, description: Ceded risk, treaties and recoveries. }
+  - { key: distribution, name: Distribution, description: Brokers, agents and direct channels. }
+  - { key: actuarial-reserving, name: Actuarial & Reserving, description: Reserves, loss development and pricing adequacy. }
+  - { key: fraud, name: Fraud, description: Claims and application fraud detection. }
+
+conformedBackbone:
+  description: Party to policy to risk to claim.
+  entities:
+    - { key: party, name: Party }
+    - { key: policy, name: Policy }
+    - { key: risk-item, name: Risk Item }
+    - { key: claim, name: Claim }
+  links:
+    - { from: Party, to: Policy, cardinality: ONE_TO_MANY }
+    - { from: Policy, to: Risk Item, cardinality: ONE_TO_MANY }
+    - { from: Risk Item, to: Claim, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: party, name: Party, description: A person or organisation known to the insurer. }
+  - { key: policy, name: Policy, description: An insurance contract. }
+  - { key: risk-item, name: Risk Item, description: The specific insured object or life. }
+  - { key: claim, name: Claim, description: A notified loss under a policy. }
+  - { key: quote, name: Quote, description: A priced offer prior to bind. }
+  - { key: premium, name: Premium, description: Consideration due under a policy. }
+  - { key: reserve, name: Reserve, description: Provision held against expected claim cost. }
+  - { key: broker, name: Broker, description: An intermediary distributing policies. }
+  - { key: treaty, name: Treaty, description: A reinsurance arrangement. }
+  - { key: payment, name: Payment, description: Money in or out against a policy or claim. }
+  - { key: peril, name: Peril, description: A category of insured cause of loss. }
+
+controls:
+  - { key: fair-pricing, name: Fair pricing, category: Regulatory, jurisdiction: General, requirement: Rating factors must be justifiable and free of prohibited discrimination. }
+  - { key: claims-fairness, name: Fair claims handling, category: Regulatory, jurisdiction: General, requirement: Claims decisions must be explainable and reviewable by a named human. }
+  - { key: health-data, name: Health data handling, category: Privacy, jurisdiction: General, requirement: Health data is processed only for underwriting or claims purposes with a lawful basis. }
+  - { key: reserving-lineage, name: Reserving lineage, category: Regulatory, jurisdiction: General, requirement: Reserve figures are traceable to policy and claim source records. }
+  - { key: retention-policy-records, name: Policy record retention, category: Records, jurisdiction: General, requirement: Policy and claim records are retained for the statutory period after expiry. }
+  - { key: pii-minimisation, name: Personal data minimisation, category: Privacy, jurisdiction: General, requirement: Analytical products exclude direct identifiers unless the purpose requires them. }
+  - { key: sanctions-screening, name: Sanctions screening, category: Regulatory, jurisdiction: General, requirement: Parties are screened before bind and before settlement. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Policyholder data remains in the licensed operating region. }
+
+starterMetrics:
+  - { name: policies_in_force, label: Policies in force, definition: Active policies at period end., grain: policy }
+  - { name: gross_written_premium, label: Gross written premium, definition: Premium written in the period., grain: product-month }
+  - { name: loss_ratio, label: Loss ratio, definition: Incurred claims over earned premium., grain: product-month }
+  - { name: expense_ratio, label: Expense ratio, definition: Operating expense over earned premium., grain: product-month }
+  - { name: combined_ratio, label: Combined ratio, definition: Loss ratio plus expense ratio., grain: product-month }
+  - { name: claim_frequency, label: Claim frequency, definition: Claims per exposure unit., grain: product-month }
+  - { name: average_claim_cost, label: Average claim cost, definition: Mean incurred cost per claim., grain: product-month }
+  - { name: claim_cycle_time, label: Claim cycle time, definition: Elapsed days from notification to settlement., grain: claim }
+  - { name: quote_conversion_rate, label: Quote conversion rate, definition: Share of quotes that bind., grain: channel-month }
+  - { name: renewal_retention_rate, label: Renewal retention, definition: Share of policies renewed at expiry., grain: product-month }
+
+sampleDecisions:
+  - consumerPersona: Claims Operations Lead
+    decision: Which open claims to assign to a senior assessor today
+    cadence: Daily
+    currentWorkaround: A claims queue sorted by notification date
+    latencyTolerance: Hourly
+    consequence: Complex claims sit with junior assessors and settle late or wrongly.
+    questions:
+      - Which open claims exceed the complexity threshold?
+      - Which are approaching a regulatory response deadline?
+      - What is the reserve movement on each since notification?
+  - consumerPersona: Pricing Actuary
+    decision: Which rating factors to revise at the next filing
+    cadence: Quarterly
+    currentWorkaround: Extracts from policy and claims systems joined manually
+    latencyTolerance: Weekly
+    consequence: Rate adequacy is assessed on stale and partially reconciled data.
+    questions:
+      - Which segments have loss ratio above target?
+      - How has claim frequency moved by peril over three years?
+      - Which rating factors are least predictive today?
+  - consumerPersona: Fraud Investigator
+    decision: Which claims to refer for investigation this week
+    cadence: Weekly
+    currentWorkaround: Referrals raised ad hoc by assessors
+    latencyTolerance: Daily
+    consequence: Fraudulent claims settle before referral and recovery becomes unlikely.
+    questions:
+      - Which open claims match known fraud indicators?
+      - Which parties appear on multiple recent claims?
+      - What is the value exposed on each referral candidate?
+
+platformProfiles:
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+  - { key: lakehouse, name: Lakehouse, bronze: Bronze tables, silver: Silver tables, gold: Gold tables, ingestion: Incremental file load, orchestration: Workflow scheduler }
+
+glossary:
+  - { term: Risk item, definition: The specific object or life insured under a policy. }
+  - { term: Loss ratio, definition: Incurred claims divided by earned premium. }
+  - { term: Reserve, definition: The provision held for the expected ultimate cost of a claim. }
+  - { term: Bind, definition: The moment a quote becomes an in-force policy. }
+
+seedProducts:
+  - key: claims-triage
+    name: Claims Triage
+    domainKey: claims
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Open claims scored for complexity and deadline exposure at the point of assignment.
+    persona: Claims Operations Lead
+    decision: Which open claims to assign to a senior assessor today
+    cadence: Daily
+    workaround: A claims queue sorted only by notification date
+    consequence: Complex claims sit with junior assessors and settle late or wrongly.
+    questions:
+      - Which open claims exceed the complexity threshold?
+      - Which are approaching a regulatory response deadline?
+      - What is the reserve movement on each since notification?
+    sources: [{ name: Claims extract, system: Claims platform }, { name: Policy extract, system: Policy admin }]
+    entities:
+      - { name: Claim, key: claim_id, attributes: [claim_id, policy_id, notified_at, peril_code, reserve_amount, status] }
+      - { name: Policy, key: policy_id, attributes: [policy_id, party_id, product_code, inception_date, sum_insured_amount] }
+    metrics:
+      - { name: claim_cycle_time, label: Claim cycle time, definition: Elapsed days from notification to settlement., grain: claim }
+      - { name: open_claims_at_deadline, label: Claims near deadline, definition: Open claims within five days of a response deadline., grain: claim }
+    controls: [claims-fairness, health-data, pii-minimisation, retention-policy-records]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Hourly
+    qualityScore: 90
+    costToServeUsdPerMonth: 420
+    platformProfileKey: warehouse
+    value: { statement: Reduce median claim cycle time by five days, baseline: 27, unit: days, expectedChange: -5, method: Median cycle time by month from the claims platform, date: '2027-02-28', realised: false }
+    telemetry: { consumers: 24, queries30d: 520, sessions30d: 210, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: portfolio-loss-ratio
+    name: Portfolio Loss Ratio
+    domainKey: actuarial-reserving
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: Certified loss and combined ratio by product, segment and accident period.
+    persona: Pricing Actuary
+    decision: Which rating factors to revise at the next filing
+    cadence: Quarterly
+    workaround: Policy and claims extracts joined by hand each quarter
+    consequence: Rate adequacy is assessed on stale, partially reconciled data.
+    questions:
+      - Which segments have loss ratio above target?
+      - How has claim frequency moved by peril over three years?
+      - Which rating factors are least predictive today?
+    sources: [{ name: Policy extract, system: Policy admin }, { name: Claims extract, system: Claims platform }]
+    entities:
+      - { name: Policy, key: policy_id, attributes: [policy_id, product_code, segment, earned_premium_amount, exposure_units] }
+      - { name: Claim, key: claim_id, attributes: [claim_id, policy_id, incurred_amount, peril_code, accident_date] }
+    metrics:
+      - { name: loss_ratio, label: Loss ratio, definition: Incurred claims over earned premium., grain: product-month }
+      - { name: claim_frequency, label: Claim frequency, definition: Claims per exposure unit., grain: product-month }
+      - { name: combined_ratio, label: Combined ratio, definition: Loss ratio plus expense ratio., grain: product-month }
+    controls: [reserving-lineage, fair-pricing, residency]
+    patterns: [certified-dashboard, self-serve-exploration, conversational, bulk-extract]
+    freshness: Monthly, five working days after close
+    qualityScore: 95
+    costToServeUsdPerMonth: 300
+    platformProfileKey: lakehouse
+    value: { statement: Cut quarterly rate review preparation from ten days to three, baseline: 10, unit: days per quarter, expectedChange: -7, method: Actuarial team time recording, date: '2026-12-31', realised: true, measured: 3 }
+    telemetry: { consumers: 31, queries30d: 380, sessions30d: 150, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: fraud-referral
+    name: Fraud Referral
+    domainKey: fraud
+    archetype: INSIGHT_RECOMMENDATION
+    tier: CONSUMER_ALIGNED
+    description: Claims matching fraud indicators, with exposure value and party linkage.
+    persona: Fraud Investigator
+    decision: Which claims to refer for investigation this week
+    cadence: Weekly
+    workaround: Referrals raised ad hoc by individual assessors
+    consequence: Fraudulent claims settle before referral and recovery becomes unlikely.
+    questions:
+      - Which open claims match known fraud indicators?
+      - Which parties appear on multiple recent claims?
+      - What is the value exposed on each referral candidate?
+    sources: [{ name: Claims extract, system: Claims platform }]
+    entities:
+      - { name: Claim, key: claim_id, attributes: [claim_id, party_id, incurred_amount, indicator_count, notified_at] }
+      - { name: Party, key: party_id, attributes: [party_id, party_name*, contact_phone*, claim_count] }
+    metrics:
+      - { name: referral_candidates, label: Referral candidates, definition: Open claims exceeding the indicator threshold., grain: claim }
+      - { name: exposed_value, label: Exposed value, definition: Incurred value on referral candidates., grain: month }
+    controls: [claims-fairness, pii-minimisation, sanctions-screening]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 84
+    costToServeUsdPerMonth: 190
+    platformProfileKey: warehouse
+    value: { statement: Increase pre-settlement referral rate from 40% to 70% of eventual fraud findings, baseline: 40, unit: percent referred before settlement, expectedChange: 30, method: Retrospective review of confirmed fraud cases, date: '2027-04-30', realised: false }
+    telemetry: { consumers: 5, queries30d: 40, sessions30d: 18, daysSinceLastUse: 95, freshnessBreaches30d: 2 }

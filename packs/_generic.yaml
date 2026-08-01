@@ -1,0 +1,202 @@
+key: generic
+name: Generic
+industry: Industry-agnostic starting point
+version: 1.0.0
+description: >-
+  The neutral pack. Use it when no industry pack fits, or as the base for a new one.
+  Illustrative and editable — not authoritative.
+editable: true
+
+domains:
+  - { key: customer, name: Customer, description: Who buys from or is served by the organisation. }
+  - { key: product-service, name: Product & Service, description: What the organisation sells or provides. }
+  - { key: order-transaction, name: Order & Transaction, description: Commercial events between the parties. }
+  - { key: finance, name: Finance, description: Revenue, cost, margin and financial control. }
+  - { key: operations, name: Operations, description: How work gets done and how well. }
+  - { key: people, name: People, description: Workforce, roles and capability. }
+  - { key: risk-compliance, name: Risk & Compliance, description: Obligations, controls and exposure. }
+
+conformedBackbone:
+  description: The minimum spine any organisation can conform to.
+  entities:
+    - { key: party, name: Party }
+    - { key: account, name: Account }
+    - { key: product, name: Product }
+    - { key: transaction, name: Transaction }
+  links:
+    - { from: Party, to: Account, cardinality: ONE_TO_MANY }
+    - { from: Account, to: Transaction, cardinality: ONE_TO_MANY }
+    - { from: Product, to: Transaction, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: party, name: Party, description: A person or organisation the business deals with. }
+  - { key: account, name: Account, description: A relationship held by a party. }
+  - { key: product, name: Product, description: A sellable or servable offering. }
+  - { key: transaction, name: Transaction, description: A commercial event. }
+  - { key: location, name: Location, description: A physical or logical place. }
+  - { key: channel, name: Channel, description: The route through which an interaction occurred. }
+  - { key: employee, name: Employee, description: A member of the workforce. }
+  - { key: supplier, name: Supplier, description: A party the organisation buys from. }
+  - { key: contract, name: Contract, description: An agreement governing a relationship. }
+  - { key: interaction, name: Interaction, description: A recorded contact with a party. }
+  - { key: case, name: Case, description: A unit of service or investigation work. }
+
+controls:
+  - { key: lawful-basis, name: Lawful basis for processing, category: Privacy, jurisdiction: General, requirement: Personal data is processed only for a recorded, lawful purpose. }
+  - { key: consent, name: Consent record, category: Privacy, jurisdiction: General, requirement: Marketing use requires current recorded consent. }
+  - { key: retention, name: Retention schedule, category: Records, jurisdiction: General, requirement: Records are destroyed at the end of the retention period. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Data remains in the primary operating region unless a transfer basis exists. }
+  - { key: access-least-privilege, name: Least privilege, category: Security, jurisdiction: General, requirement: Access is granted for the narrowest purpose that satisfies the need. }
+  - { key: minimisation, name: Data minimisation, category: Privacy, jurisdiction: General, requirement: Analytical products exclude identifiers unless a stated purpose requires them. }
+  - { key: audit-trail, name: Audit trail, category: Governance, jurisdiction: General, requirement: Decisions affecting individuals are auditable to a named human. }
+  - { key: model-explainability, name: Automated decision explainability, category: Governance, jurisdiction: General, requirement: Automated scoring must be explainable and overridable by a named human. }
+
+starterMetrics:
+  - { name: active_parties, label: Active parties, definition: Parties with activity in the period., grain: party }
+  - { name: transaction_volume, label: Transaction volume, definition: Count of transactions in the period., grain: day }
+  - { name: transaction_value, label: Transaction value, definition: Sum of transaction amounts., grain: day }
+  - { name: gross_margin, label: Gross margin, definition: Revenue less direct cost., grain: product-month }
+  - { name: churn_rate, label: Churn rate, definition: Share of parties lost in the period., grain: month }
+  - { name: acquisition_cost, label: Acquisition cost, definition: Cost to acquire one new party., grain: month }
+  - { name: case_cycle_time, label: Case cycle time, definition: Elapsed time from case open to close., grain: case }
+  - { name: first_contact_resolution, label: First contact resolution, definition: Cases resolved on first contact., grain: case }
+  - { name: supplier_on_time_rate, label: Supplier on-time rate, definition: Deliveries received on or before the promised date., grain: supplier-month }
+  - { name: open_risk_items, label: Open risk items, definition: Risk items not yet closed., grain: month }
+
+sampleDecisions:
+  - consumerPersona: Operations Manager
+    decision: Which cases to escalate before they breach their service commitment
+    cadence: Daily
+    currentWorkaround: A morning spreadsheet exported from the case system
+    latencyTolerance: Hourly
+    consequence: Commitments are breached and the breach is discovered after the fact.
+    questions:
+      - Which open cases are within 24 hours of breaching?
+      - Which team owns each of them?
+      - How many breached last week and why?
+  - consumerPersona: Commercial Lead
+    decision: Which products to reprice next quarter
+    cadence: Quarterly
+    currentWorkaround: Finance extracts reconciled manually against sales reports
+    latencyTolerance: Weekly
+    consequence: Repricing decisions are made on stale margin figures.
+    questions:
+      - Which products have margin below target?
+      - How has margin moved over the last four quarters?
+      - Which customers would be most affected by a price change?
+  - consumerPersona: Risk Officer
+    decision: Which open risk items require escalation to the board this month
+    cadence: Monthly
+    currentWorkaround: A manually maintained risk register
+    latencyTolerance: Weekly
+    consequence: Material risks reach the board late or not at all.
+    questions:
+      - Which risk items are open beyond their target close date?
+      - Which have increased in severity since last month?
+      - Which controls have failed testing?
+
+platformProfiles:
+  - { key: lakehouse, name: Lakehouse on object storage, bronze: Raw landing zone, silver: Conformed tables, gold: Serving tables, ingestion: Batch file load, orchestration: Scheduled DAG }
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: STAGING schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+
+glossary:
+  - { term: Grain, definition: What exactly one row of a dataset represents. }
+  - { term: Conformed backbone, definition: The shared entities every product in a workspace binds to. }
+  - { term: Semantic layer, definition: The single place a metric is defined so every channel returns the same answer. }
+  - { term: Data contract, definition: The promise a product makes about schema, freshness and quality. }
+
+seedProducts:
+  - key: case-sla-watch
+    name: Case SLA Watch
+    domainKey: operations
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Open cases ranked by how close they are to breaching their service commitment.
+    persona: Operations Manager
+    decision: Which cases to escalate before they breach their service commitment
+    cadence: Daily
+    workaround: A morning spreadsheet exported from the case system
+    consequence: Commitments are breached and the breach is only discovered afterwards.
+    questions:
+      - Which open cases are within 24 hours of breaching?
+      - Which team owns each of them?
+      - How many breached last week, and why?
+    sources: [{ name: Case management extract, system: Service platform }]
+    entities:
+      - { name: Case, key: case_id, attributes: [case_id, party_id, opened_at, due_at, status, owning_team] }
+      - { name: Party, key: party_id, attributes: [party_id, party_name*, segment] }
+    metrics:
+      - { name: cases_at_risk, label: Cases at risk, definition: Open cases within 24 hours of breach., grain: case }
+      - { name: case_cycle_time, label: Case cycle time, definition: Elapsed time from open to close., grain: case }
+    controls: [lawful-basis, retention, audit-trail]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Hourly
+    qualityScore: 90
+    costToServeUsdPerMonth: 180
+    platformProfileKey: warehouse
+    value: { statement: Cut service commitment breaches by a third, baseline: 42, unit: breaches per month, expectedChange: -14, method: Compare breach counts six months either side of launch, date: '2027-02-28', realised: false }
+    telemetry: { consumers: 21, queries30d: 410, sessions30d: 160, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: product-margin
+    name: Product Margin
+    domainKey: finance
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: Certified margin by product and period, defined once for every channel.
+    persona: Commercial Lead
+    decision: Which products to reprice next quarter
+    cadence: Quarterly
+    workaround: Finance extracts reconciled by hand against sales reports
+    consequence: Repricing decisions are made on stale and inconsistent margin figures.
+    questions:
+      - Which products have margin below target?
+      - How has margin moved over the last four quarters?
+      - Which customers would be most affected by a price change?
+    sources: [{ name: General ledger extract, system: Finance system }, { name: Sales extract, system: Order platform }]
+    entities:
+      - { name: Product, key: product_id, attributes: [product_id, product_name, category, list_price_amount] }
+      - { name: Transaction, key: transaction_id, attributes: [transaction_id, product_id, party_id, net_amount, cost_amount, transacted_at] }
+    metrics:
+      - { name: gross_margin, label: Gross margin, definition: Revenue less direct cost., grain: product-month }
+      - { name: transaction_value, label: Transaction value, definition: Sum of net transaction amounts., grain: product-month }
+    controls: [audit-trail, retention, access-least-privilege]
+    patterns: [certified-dashboard, self-serve-exploration, conversational]
+    freshness: Daily by 08:00
+    qualityScore: 93
+    costToServeUsdPerMonth: 240
+    platformProfileKey: lakehouse
+    value: { statement: Reduce quarterly margin reporting preparation from 3 days to half a day, baseline: 3, unit: days per quarter, expectedChange: -2.5, method: Time recorded by the finance analyst team, date: '2026-12-31', realised: true, measured: 0.5 }
+    telemetry: { consumers: 46, queries30d: 900, sessions30d: 340, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: risk-register-view
+    name: Risk Register View
+    domainKey: risk-compliance
+    archetype: REFERENCE_DATA
+    tier: CONSUMER_ALIGNED
+    description: Open risk items with movement, control test results and escalation status.
+    persona: Risk Officer
+    decision: Which open risk items require escalation to the board this month
+    cadence: Monthly
+    workaround: A manually maintained risk register spreadsheet
+    consequence: Material risks reach the board late or not at all.
+    questions:
+      - Which risk items are open beyond their target close date?
+      - Which have increased in severity since last month?
+      - Which controls have failed testing?
+    sources: [{ name: GRC export, system: Risk platform }]
+    entities:
+      - { name: Risk Item, key: risk_id, attributes: [risk_id, title, severity, target_close_date, owner_name*, status] }
+      - { name: Control Test, key: test_id, attributes: [test_id, risk_id, tested_at, outcome] }
+    metrics:
+      - { name: open_risk_items, label: Open risk items, definition: Risk items not yet closed., grain: month }
+      - { name: failed_control_tests, label: Failed control tests, definition: Control tests with a failing outcome., grain: month }
+    controls: [audit-trail, minimisation, access-least-privilege]
+    patterns: [certified-dashboard, bulk-extract]
+    freshness: Weekly
+    qualityScore: 85
+    costToServeUsdPerMonth: 90
+    platformProfileKey: warehouse
+    value: { statement: Halve the time to prepare the monthly board risk pack, baseline: 8, unit: hours per month, expectedChange: -4, method: Time study with the risk team, date: '2027-01-31', realised: false }
+    telemetry: { consumers: 6, queries30d: 30, sessions30d: 14, daysSinceLastUse: 12, freshnessBreaches30d: 0 }

@@ -1,0 +1,320 @@
+key: utility-energy
+name: Utility & Energy
+industry: Utilities and energy retail/distribution
+version: 1.0.0
+description: >-
+  Reference implementation pack. Domains, conformed backbone and controls for a regulated
+  utility running metering, billing, credit, outage and network asset operations.
+  Illustrative and editable — not authoritative, and not legal advice.
+editable: true
+
+domains:
+  - key: customer-account
+    name: Customer & Account
+    description: Who the customer is, what they hold, and how they are contactable.
+  - key: metering-ami
+    name: Metering & AMI
+    description: Meters, service points, interval reads and AMI event streams.
+  - key: billing-revenue
+    name: Billing & Revenue
+    description: Rating, invoicing, payments and revenue assurance.
+  - key: credit-collections
+    name: Credit & Collections
+    description: Arrears, payment plans, disconnection and protected-status handling.
+  - key: outage-reliability
+    name: Outage & Reliability
+    description: Interruptions, restoration, SAIDI/SAIFI and customer impact.
+  - key: network-grid-assets
+    name: Network & Grid Assets
+    description: Substations, feeders, transformers and asset health.
+  - key: der-programs
+    name: DER & Programs
+    description: Distributed energy resources, tariffs, demand response and enrolment.
+  - key: field-work-management
+    name: Field & Work Management
+    description: Work orders, crews, appointments and field completion.
+
+conformedBackbone:
+  description: The spine every utility data product binds to.
+  entities:
+    - { key: customer, name: Customer }
+    - { key: account, name: Account }
+    - { key: premise, name: Premise }
+    - { key: service-point, name: Service Point }
+    - { key: meter, name: Meter }
+  links:
+    - { from: Customer, to: Account, cardinality: ONE_TO_MANY }
+    - { from: Account, to: Premise, cardinality: ONE_TO_MANY }
+    - { from: Premise, to: Service Point, cardinality: ONE_TO_MANY }
+    - { from: Service Point, to: Meter, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: customer, name: Customer, description: A person or organisation in a supply relationship. }
+  - { key: account, name: Account, description: The billing relationship held by a customer. }
+  - { key: premise, name: Premise, description: A physical location that can take supply. }
+  - { key: service-point, name: Service Point, description: The delivery point at a premise. }
+  - { key: meter, name: Meter, description: The device measuring consumption at a service point. }
+  - { key: interval-read, name: Interval Read, description: A timestamped consumption measurement. }
+  - { key: invoice, name: Invoice, description: A rated bill issued against an account. }
+  - { key: payment, name: Payment, description: Money received against an account. }
+  - { key: outage-event, name: Outage Event, description: An unplanned interruption of supply. }
+  - { key: work-order, name: Work Order, description: Field work raised against an asset or premise. }
+  - { key: transformer, name: Transformer, description: A network asset serving one or more service points. }
+  - { key: program-enrolment, name: Program Enrolment, description: A customer's participation in a tariff or DER program. }
+
+controls:
+  - key: consent-marketing
+    name: Marketing consent
+    category: Privacy
+    jurisdiction: General
+    requirement: Customer contact data may be used for marketing only with recorded, current consent.
+  - key: protected-status
+    name: Protected and vulnerable customers
+    category: Regulatory
+    jurisdiction: General
+    requirement: Customers flagged as medically dependent or protected must never appear on a disconnection list.
+  - key: retention-billing
+    name: Billing record retention
+    category: Records
+    jurisdiction: General
+    requirement: Billing and payment records are retained for seven years and then destroyed.
+  - key: reg-reporting-reliability
+    name: Reliability reporting
+    category: Regulatory
+    jurisdiction: General
+    requirement: Reliability indices are reported to the regulator on a fixed calendar with auditable lineage.
+  - key: pii-minimisation
+    name: Personal data minimisation
+    category: Privacy
+    jurisdiction: General
+    requirement: Personal identifiers are excluded from analytical products unless a stated purpose requires them.
+  - key: meter-data-access
+    name: Metering data access
+    category: Regulatory
+    jurisdiction: General
+    requirement: Interval metering data may be disclosed only to the customer of record or an authorised agent.
+  - key: residency
+    name: Data residency
+    category: Security
+    jurisdiction: General
+    requirement: Customer and metering data remain within the primary operating region.
+  - key: credit-fairness
+    name: Credit decision fairness
+    category: Regulatory
+    jurisdiction: General
+    requirement: Automated credit and collections scoring must be explainable and overridable by a named human.
+
+starterMetrics:
+  - { name: active_customers, label: Active customers, definition: Customers with at least one active account., grain: customer }
+  - { name: billed_revenue, label: Billed revenue, definition: Sum of invoiced amounts in the period., grain: account-month }
+  - { name: unbilled_accounts, label: Unbilled accounts, definition: Accounts with no invoice in the expected cycle., grain: account }
+  - { name: arrears_balance, label: Arrears balance, definition: Overdue balance across accounts., grain: account }
+  - { name: saidi, label: SAIDI, definition: System average interruption duration index., grain: feeder-month }
+  - { name: saifi, label: SAIFI, definition: System average interruption frequency index., grain: feeder-month }
+  - { name: estimated_read_rate, label: Estimated read rate, definition: Share of billing determinants derived from estimates., grain: account-month }
+  - { name: meter_communication_rate, label: Meter communication rate, definition: Share of meters reporting on schedule., grain: meter-day }
+  - { name: der_enrolment_rate, label: DER enrolment rate, definition: Share of eligible customers enrolled in a DER program., grain: program-month }
+  - { name: first_visit_resolution, label: First visit resolution, definition: Work orders completed on the first field visit., grain: work-order }
+  - { name: consumption_kwh, label: Consumption, definition: Metered energy consumed in the period., grain: service-point-day }
+
+sampleDecisions:
+  - consumerPersona: Credit & Collections Manager
+    decision: Which accounts to place on a payment plan this week rather than escalate
+    cadence: Weekly
+    currentWorkaround: A spreadsheet joining billing extracts to a manual protected-status list
+    latencyTolerance: Daily by 07:00
+    consequence: Protected customers are escalated in error, and recoverable arrears age past the point of recovery.
+    questions:
+      - Which accounts crossed 60 days in arrears this week?
+      - Which of those accounts hold a protected or medically dependent flag?
+      - What is the expected recovery if we offer a plan rather than escalate?
+  - consumerPersona: Reliability Engineer
+    decision: Which feeders to prioritise for vegetation management next quarter
+    cadence: Quarterly
+    currentWorkaround: Outage exports reconciled by hand against an asset register
+    latencyTolerance: Weekly
+    consequence: Spend goes to feeders that are not driving customer minutes lost.
+    questions:
+      - Which feeders contributed most customer minutes lost in the last 12 months?
+      - How much of that was vegetation-related?
+      - Which of those feeders serve protected customers?
+  - consumerPersona: Revenue Assurance Analyst
+    decision: Which billing exceptions to investigate first
+    cadence: Daily
+    currentWorkaround: A nightly report with no ranking
+    latencyTolerance: Daily by 06:00
+    consequence: Unbilled revenue ages and becomes unrecoverable.
+    questions:
+      - Which accounts have no invoice in their expected cycle?
+      - What is the estimated value at risk per exception?
+      - How many exceptions are caused by meter communication failure?
+
+platformProfiles:
+  - key: snowflake
+    name: Snowflake
+    bronze: RAW schema, one table per source extract
+    silver: CONFORMED schema, typed and deduplicated
+    gold: PRODUCT schema, one view per certified product
+    ingestion: Batch COPY INTO from staged extracts
+    orchestration: Task graph on a daily schedule
+  - key: databricks
+    name: Databricks lakehouse
+    bronze: Bronze Delta tables per source
+    silver: Silver Delta tables, conformed
+    gold: Gold Delta tables serving the semantic layer
+    ingestion: Auto Loader from cloud storage
+    orchestration: Workflows with task dependencies
+  - key: on-prem
+    name: On-premises warehouse
+    bronze: Landing schema
+    silver: Staging schema
+    gold: Presentation schema
+    ingestion: Scheduled ETL extracts
+    orchestration: Enterprise scheduler
+
+glossary:
+  - { term: Service point, definition: The physical delivery point at which supply is measured. }
+  - { term: AMI, definition: Advanced Metering Infrastructure — meters that report remotely on a schedule. }
+  - { term: SAIDI, definition: Average outage minutes experienced per customer served. }
+  - { term: Estimated read, definition: A billing determinant derived rather than measured. }
+  - { term: Protected status, definition: A customer flag restricting disconnection and collections action. }
+  - { term: Feeder, definition: A distribution circuit serving a group of service points. }
+
+seedProducts:
+  - key: arrears-and-protection
+    name: Arrears & Customer Protection
+    domainKey: credit-collections
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: A single view of account arrears with protected-status enforcement built in.
+    persona: Credit & Collections Manager
+    decision: Which accounts to place on a payment plan this week rather than escalate
+    cadence: Weekly
+    workaround: A spreadsheet joining billing extracts to a manually maintained protection list
+    consequence: Protected customers are escalated in error and recoverable arrears age past recovery.
+    questions:
+      - Which accounts crossed 60 days in arrears this week?
+      - Which of those accounts hold a protected or medically dependent flag?
+      - What is the expected recovery if we offer a plan rather than escalate?
+    sources:
+      - { name: Billing extract, system: SAP IS-U }
+      - { name: Customer master, system: CIS }
+    entities:
+      - name: Account
+        key: account_id
+        attributes: [account_id, customer_id, arrears_balance, days_in_arrears, protected_flag, opened_at]
+      - name: Customer
+        key: customer_id
+        attributes: [customer_id, customer_name*, contact_email*, segment]
+    metrics:
+      - { name: arrears_balance, label: Arrears balance, definition: Overdue balance across accounts., grain: account }
+      - { name: protected_accounts_in_arrears, label: Protected accounts in arrears, definition: Accounts in arrears carrying a protected flag., grain: account }
+      - { name: expected_recovery_value, label: Expected recovery value, definition: Modelled recovery if a payment plan is offered., grain: account }
+    controls: [protected-status, credit-fairness, pii-minimisation, retention-billing]
+    patterns: [certified-dashboard, self-serve-exploration, operational-activation]
+    freshness: Daily by 07:00
+    qualityScore: 94
+    costToServeUsdPerMonth: 480
+    platformProfileKey: snowflake
+    value:
+      statement: Reduce weekly collections list preparation from 6 hours to under 1 hour
+      baseline: 6
+      unit: hours per week
+      expectedChange: -5
+      method: Time study with the collections team, before and after
+      date: '2026-11-30'
+      realised: true
+      measured: 1.2
+    telemetry: { consumers: 34, queries30d: 820, sessions30d: 260, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: feeder-reliability
+    name: Feeder Reliability
+    domainKey: outage-reliability
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: Customer minutes lost by feeder, with cause attribution and protected-customer exposure.
+    persona: Reliability Engineer
+    decision: Which feeders to prioritise for vegetation management next quarter
+    cadence: Quarterly
+    workaround: Outage exports reconciled by hand against the asset register
+    consequence: Maintenance spend goes to feeders that are not driving customer minutes lost.
+    questions:
+      - Which feeders contributed most customer minutes lost in the last 12 months?
+      - How much of that was vegetation-related?
+      - Which of those feeders serve protected customers?
+    sources:
+      - { name: Outage management extract, system: OMS }
+      - { name: Asset register, system: GIS }
+    entities:
+      - name: Outage Event
+        key: outage_id
+        attributes: [outage_id, feeder_id, started_at, restored_at, cause_code, customers_affected]
+      - name: Feeder
+        key: feeder_id
+        attributes: [feeder_id, substation_id, customers_served, vegetation_risk_score]
+    metrics:
+      - { name: saidi, label: SAIDI, definition: System average interruption duration index., grain: feeder-month }
+      - { name: saifi, label: SAIFI, definition: System average interruption frequency index., grain: feeder-month }
+      - { name: vegetation_cml_share, label: Vegetation share of CML, definition: Share of customer minutes lost attributed to vegetation., grain: feeder-year }
+    controls: [reg-reporting-reliability, residency, protected-status]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 310
+    platformProfileKey: snowflake
+    value:
+      statement: Shift 20% of vegetation spend to the feeders driving the most customer minutes lost
+      baseline: 0
+      unit: percent of spend reallocated
+      expectedChange: 20
+      method: Compare planned versus actual spend allocation against the CML ranking
+      date: '2027-03-31'
+      realised: false
+    telemetry: { consumers: 12, queries30d: 140, sessions30d: 60, daysSinceLastUse: 3, freshnessBreaches30d: 1 }
+
+  - key: billing-exceptions
+    name: Billing Exceptions
+    domainKey: billing-revenue
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Ranked billing exceptions with estimated value at risk and root-cause attribution.
+    persona: Revenue Assurance Analyst
+    decision: Which billing exceptions to investigate first each morning
+    cadence: Daily
+    workaround: An unranked nightly exception report
+    consequence: Unbilled revenue ages past the point where it can be recovered.
+    questions:
+      - Which accounts have no invoice in their expected cycle?
+      - What is the estimated value at risk per exception?
+      - How many exceptions are caused by meter communication failure?
+    sources:
+      - { name: Invoice extract, system: SAP IS-U }
+      - { name: AMI read events, system: Head-end system }
+    entities:
+      - name: Billing Exception
+        key: exception_id
+        attributes: [exception_id, account_id, meter_id, exception_type, value_at_risk_amount, detected_at]
+      - name: Meter
+        key: meter_id
+        attributes: [meter_id, service_point_id, comms_status, last_read_at]
+    metrics:
+      - { name: unbilled_accounts, label: Unbilled accounts, definition: Accounts with no invoice in the expected cycle., grain: account }
+      - { name: value_at_risk, label: Value at risk, definition: Estimated unbilled revenue across open exceptions., grain: exception }
+      - { name: comms_failure_exceptions, label: Comms-failure exceptions, definition: Exceptions attributable to meter communication failure., grain: exception }
+    controls: [meter-data-access, retention-billing, residency]
+    patterns: [certified-dashboard, api-embedded, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 260
+    platformProfileKey: databricks
+    value:
+      statement: Recover an additional 2% of exception value within the billing cycle
+      baseline: 0
+      unit: percent of exception value recovered in-cycle
+      expectedChange: 2
+      method: Compare in-cycle recovery rates for six months before and after
+      date: '2027-01-31'
+      realised: false
+    telemetry: { consumers: 8, queries30d: 60, sessions30d: 25, daysSinceLastUse: 120, freshnessBreaches30d: 3 }

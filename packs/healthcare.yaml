@@ -1,0 +1,202 @@
+key: healthcare
+name: Healthcare
+industry: Healthcare provider and payer
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a healthcare provider or payer. Illustrative and editable —
+  not authoritative, and not clinical, legal or regulatory advice.
+editable: true
+
+domains:
+  - { key: patient, name: Patient, description: Identity, demographics and consent. }
+  - { key: encounters, name: Encounters, description: Admissions, appointments and episodes of care. }
+  - { key: clinical, name: Clinical, description: Diagnoses, procedures, orders and results. }
+  - { key: scheduling-capacity, name: Scheduling & Capacity, description: Clinics, theatres, beds and staffing. }
+  - { key: claims-billing, name: Claims & Billing, description: Coding, claims and reimbursement. }
+  - { key: quality-safety, name: Quality & Safety, description: Outcomes, incidents and clinical indicators. }
+  - { key: population-health, name: Population Health, description: Cohorts, risk stratification and outreach. }
+  - { key: supply-pharmacy, name: Supply & Pharmacy, description: Medicines, devices and consumables. }
+
+conformedBackbone:
+  description: Patient to encounter to clinical event to claim.
+  entities:
+    - { key: patient, name: Patient }
+    - { key: encounter, name: Encounter }
+    - { key: clinical-event, name: Clinical Event }
+    - { key: claim, name: Claim }
+  links:
+    - { from: Patient, to: Encounter, cardinality: ONE_TO_MANY }
+    - { from: Encounter, to: Clinical Event, cardinality: ONE_TO_MANY }
+    - { from: Encounter, to: Claim, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: patient, name: Patient, description: An individual receiving care. }
+  - { key: encounter, name: Encounter, description: A contact between a patient and a provider. }
+  - { key: clinical-event, name: Clinical Event, description: A diagnosis, procedure, order or result. }
+  - { key: claim, name: Claim, description: A billed episode submitted for reimbursement. }
+  - { key: provider, name: Provider, description: A clinician or care organisation. }
+  - { key: location, name: Location, description: A site, ward, clinic or theatre. }
+  - { key: appointment, name: Appointment, description: A scheduled future encounter. }
+  - { key: medication, name: Medication, description: A prescribed or administered drug. }
+  - { key: cohort, name: Cohort, description: A defined population group. }
+  - { key: incident, name: Incident, description: A recorded safety event. }
+  - { key: coverage, name: Coverage, description: A patient's insurance or funding entitlement. }
+
+controls:
+  - { key: phi-minimum-necessary, name: Minimum necessary use, category: Privacy, jurisdiction: General, requirement: Health data is disclosed only to the minimum extent necessary for the stated purpose. }
+  - { key: consent-research, name: Research consent, category: Privacy, jurisdiction: General, requirement: Secondary research use requires recorded consent or an approved legal basis. }
+  - { key: identity-matching, name: Patient identity matching, category: Safety, jurisdiction: General, requirement: Patient identity resolution must be deterministic or clinically reviewed before use in care. }
+  - { key: clinical-coding-accuracy, name: Clinical coding accuracy, category: Regulatory, jurisdiction: General, requirement: Coded diagnoses and procedures must reconcile to the clinical record. }
+  - { key: retention-health-record, name: Health record retention, category: Records, jurisdiction: General, requirement: Health records are retained for the statutory period after last contact. }
+  - { key: de-identification, name: De-identification standard, category: Privacy, jurisdiction: General, requirement: Analytical cohorts use de-identified data unless the purpose requires identifiers. }
+  - { key: audit-access, name: Access audit, category: Security, jurisdiction: General, requirement: Every access to an identifiable health record is logged and reviewable. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Health data remains within the primary jurisdiction. }
+
+starterMetrics:
+  - { name: occupied_beds, label: Occupied beds, definition: Beds occupied at census point., grain: ward-day }
+  - { name: average_length_of_stay, label: Average length of stay, definition: Mean days from admission to discharge., grain: specialty-month }
+  - { name: readmission_rate, label: Readmission rate, definition: Share of discharges readmitted within 30 days., grain: specialty-month }
+  - { name: waiting_list_size, label: Waiting list size, definition: Patients waiting for a first appointment or procedure., grain: specialty-week }
+  - { name: appointment_dna_rate, label: Did-not-attend rate, definition: Share of appointments not attended., grain: clinic-month }
+  - { name: theatre_utilisation, label: Theatre utilisation, definition: Used theatre minutes over available minutes., grain: theatre-day }
+  - { name: claim_denial_rate, label: Claim denial rate, definition: Share of submitted claims denied., grain: payer-month }
+  - { name: cost_per_episode, label: Cost per episode, definition: Direct cost attributed per completed episode., grain: episode }
+  - { name: incident_rate, label: Safety incident rate, definition: Reported incidents per 1,000 bed days., grain: ward-month }
+  - { name: cohort_risk_score, label: Cohort risk score, definition: Mean risk score across a defined cohort., grain: cohort-month }
+
+sampleDecisions:
+  - consumerPersona: Bed Manager
+    decision: Which wards need escalation before the afternoon capacity round
+    cadence: Daily
+    currentWorkaround: A manual whiteboard round and phone calls to each ward
+    latencyTolerance: Hourly
+    consequence: Capacity decisions are made on a picture that is already two hours old.
+    questions:
+      - Which wards are forecast to exceed safe occupancy today?
+      - How many discharges are clinically ready but not yet actioned?
+      - Where is the longest wait for a bed from the emergency department?
+  - consumerPersona: Waiting List Coordinator
+    decision: Which patients to bring forward on the elective waiting list
+    cadence: Weekly
+    currentWorkaround: A spreadsheet built from a weekly system export
+    latencyTolerance: Daily
+    consequence: Patients breach their maximum wait and clinical priority is applied inconsistently.
+    questions:
+      - Which patients are within four weeks of breaching their maximum wait?
+      - Which have a higher clinical priority than their current position?
+      - Which specialties have available theatre capacity next month?
+  - consumerPersona: Revenue Integrity Lead
+    decision: Which claim denials to appeal this week
+    cadence: Weekly
+    currentWorkaround: Denial reports reviewed line by line
+    latencyTolerance: Daily
+    consequence: Recoverable denials pass their appeal window.
+    questions:
+      - Which denials are within ten days of the appeal deadline?
+      - Which denial reasons have the highest historic overturn rate?
+      - What is the value at stake per denial?
+
+platformProfiles:
+  - { key: on-prem, name: On-premises warehouse, bronze: Landing schema, silver: Conformed schema, gold: Reporting schema, ingestion: Scheduled HL7 and extract loads, orchestration: Enterprise scheduler }
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+
+glossary:
+  - { term: Encounter, definition: A single contact between a patient and a care provider. }
+  - { term: Episode of care, definition: A related group of encounters treated as one unit of care. }
+  - { term: De-identification, definition: Removing or obscuring identifiers so an individual cannot reasonably be recognised. }
+  - { term: Did-not-attend, definition: A scheduled appointment the patient did not attend without notice. }
+
+seedProducts:
+  - key: bed-capacity
+    name: Bed & Capacity Position
+    domainKey: scheduling-capacity
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Live ward occupancy, discharge readiness and emergency department waits.
+    persona: Bed Manager
+    decision: Which wards need escalation before the afternoon capacity round
+    cadence: Daily
+    workaround: A manual whiteboard round and phone calls to each ward
+    consequence: Capacity decisions are made on a picture that is already two hours old.
+    questions:
+      - Which wards are forecast to exceed safe occupancy today?
+      - How many discharges are clinically ready but not yet actioned?
+      - Where is the longest wait for a bed from the emergency department?
+    sources: [{ name: Admissions extract, system: Patient administration system }]
+    entities:
+      - { name: Encounter, key: encounter_id, attributes: [encounter_id, patient_id, ward_code, admitted_at, discharge_ready_at, discharged_at] }
+      - { name: Location, key: ward_code, attributes: [ward_code, specialty_code, bed_capacity_units] }
+    metrics:
+      - { name: occupied_beds, label: Occupied beds, definition: Beds occupied at census point., grain: ward-day }
+      - { name: discharge_ready_waiting, label: Discharge-ready waiting, definition: Patients clinically ready but not discharged., grain: ward-day }
+    controls: [phi-minimum-necessary, de-identification, audit-access, residency]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Every 15 minutes
+    qualityScore: 91
+    costToServeUsdPerMonth: 560
+    platformProfileKey: on-prem
+    value: { statement: Reduce time from discharge-ready to discharge by two hours on average, baseline: 6.5, unit: hours, expectedChange: -2, method: Timestamps from the patient administration system, date: '2027-01-31', realised: false }
+    telemetry: { consumers: 40, queries30d: 2200, sessions30d: 900, daysSinceLastUse: 1, freshnessBreaches30d: 2 }
+
+  - key: elective-waiting-list
+    name: Elective Waiting List
+    domainKey: encounters
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: The elective waiting list with breach risk and clinical priority alignment.
+    persona: Waiting List Coordinator
+    decision: Which patients to bring forward on the elective waiting list
+    cadence: Weekly
+    workaround: A spreadsheet rebuilt each week from a system export
+    consequence: Patients breach their maximum wait and clinical priority is applied inconsistently.
+    questions:
+      - Which patients are within four weeks of breaching their maximum wait?
+      - Which have a higher clinical priority than their current position?
+      - Which specialties have available theatre capacity next month?
+    sources: [{ name: Waiting list extract, system: Patient administration system }, { name: Theatre schedule, system: Theatre system }]
+    entities:
+      - { name: Waiting Entry, key: entry_id, attributes: [entry_id, patient_id, specialty_code, added_at, priority_code, breach_date] }
+      - { name: Patient, key: patient_id, attributes: [patient_id, patient_name*, date_of_birth*, contact_phone*] }
+    metrics:
+      - { name: waiting_list_size, label: Waiting list size, definition: Patients waiting for a first appointment or procedure., grain: specialty-week }
+      - { name: breach_risk_count, label: Patients at breach risk, definition: Patients within four weeks of their maximum wait., grain: specialty-week }
+    controls: [phi-minimum-necessary, identity-matching, retention-health-record, audit-access]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 300
+    platformProfileKey: on-prem
+    value: { statement: Cut avoidable maximum-wait breaches by half, baseline: 180, unit: breaches per quarter, expectedChange: -90, method: Breach counts reported to the board each quarter, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 22, queries30d: 460, sessions30d: 190, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: denial-recovery
+    name: Claim Denial Recovery
+    domainKey: claims-billing
+    archetype: INSIGHT_RECOMMENDATION
+    tier: AGGREGATE
+    description: Denied claims ranked by appeal deadline, historic overturn rate and value.
+    persona: Revenue Integrity Lead
+    decision: Which claim denials to appeal this week
+    cadence: Weekly
+    workaround: Denial reports reviewed line by line
+    consequence: Recoverable denials pass their appeal window unworked.
+    questions:
+      - Which denials are within ten days of the appeal deadline?
+      - Which denial reasons have the highest historic overturn rate?
+      - What is the value at stake per denial?
+    sources: [{ name: Claims remittance extract, system: Billing system }]
+    entities:
+      - { name: Claim, key: claim_id, attributes: [claim_id, encounter_id, payer_code, denial_reason_code, billed_amount, appeal_deadline_date] }
+    metrics:
+      - { name: claim_denial_rate, label: Claim denial rate, definition: Share of submitted claims denied., grain: payer-month }
+      - { name: recoverable_value, label: Recoverable value, definition: Billed value on denials still inside the appeal window., grain: week }
+    controls: [clinical-coding-accuracy, retention-health-record, audit-access]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 07:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 230
+    platformProfileKey: warehouse
+    value: { statement: Increase denial recovery value by 15% within two quarters, baseline: 0, unit: percent increase in recovered value, expectedChange: 15, method: Recovered value compared against the prior two quarters, date: '2027-04-30', realised: false }
+    telemetry: { consumers: 9, queries30d: 95, sessions30d: 40, daysSinceLastUse: 6, freshnessBreaches30d: 1 }

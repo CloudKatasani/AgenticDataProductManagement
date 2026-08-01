@@ -1,0 +1,202 @@
+key: public-sector
+name: Public Sector
+industry: Government and public services
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a government department or local authority, including
+  open-data publication. Illustrative and editable — not authoritative, and not legal advice.
+editable: true
+
+domains:
+  - { key: citizen, name: Citizen & Service User, description: Identity, eligibility and consent. }
+  - { key: service-delivery, name: Service Delivery, description: Applications, cases and outcomes. }
+  - { key: benefits-payments, name: Benefits & Payments, description: Entitlement, award and disbursement. }
+  - { key: revenue-collection, name: Revenue & Collection, description: Charges, billing and recovery. }
+  - { key: assets-estates, name: Assets & Estates, description: Property, infrastructure and maintenance. }
+  - { key: workforce, name: Workforce, description: Staff, capacity and capability. }
+  - { key: transparency-open-data, name: Transparency & Open Data, description: Published datasets and FOI. }
+  - { key: performance-reporting, name: Performance Reporting, description: Statutory and internal performance measures. }
+
+conformedBackbone:
+  description: Person to case to service to outcome.
+  entities:
+    - { key: person, name: Person }
+    - { key: case, name: Case }
+    - { key: service, name: Service }
+    - { key: outcome, name: Outcome }
+  links:
+    - { from: Person, to: Case, cardinality: ONE_TO_MANY }
+    - { from: Case, to: Service, cardinality: MANY_TO_MANY }
+    - { from: Case, to: Outcome, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: person, name: Person, description: An individual known to the organisation. }
+  - { key: household, name: Household, description: A group of people at an address. }
+  - { key: case, name: Case, description: A unit of casework or an application. }
+  - { key: service, name: Service, description: A service the organisation provides. }
+  - { key: outcome, name: Outcome, description: The recorded result of a case. }
+  - { key: payment, name: Payment, description: Money paid to or received from a person. }
+  - { key: property, name: Property, description: A land or building record. }
+  - { key: request, name: Request, description: A contact, complaint or information request. }
+  - { key: employee, name: Employee, description: A member of staff. }
+  - { key: supplier, name: Supplier, description: A contracted provider. }
+  - { key: dataset, name: Dataset, description: A published or publishable data resource. }
+
+controls:
+  - { key: lawful-basis, name: Lawful basis, category: Privacy, jurisdiction: General, requirement: Personal data is processed only under a recorded lawful basis with a named controller. }
+  - { key: foi-readiness, name: Freedom of information readiness, category: Regulatory, jurisdiction: General, requirement: Published figures must be reproducible in response to an information request. }
+  - { key: open-data-standard, name: Open data publication, category: Regulatory, jurisdiction: General, requirement: Published datasets carry a machine-readable catalogue record and an open licence. }
+  - { key: special-category, name: Special category data, category: Privacy, jurisdiction: General, requirement: Special category data requires an additional condition and is excluded from general analytics. }
+  - { key: equality-duty, name: Equality impact, category: Regulatory, jurisdiction: General, requirement: Service analytics must support assessment of differential impact across protected groups. }
+  - { key: retention-statutory, name: Statutory retention, category: Records, jurisdiction: General, requirement: Records are retained per the statutory schedule and then destroyed. }
+  - { key: automated-decision, name: Automated decision safeguards, category: Governance, jurisdiction: General, requirement: Automated decisions affecting entitlement must be explainable and appealable to a named human. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Citizen data remains within the national jurisdiction. }
+
+starterMetrics:
+  - { name: open_cases, label: Open cases, definition: Cases not yet closed., grain: service-week }
+  - { name: case_cycle_time, label: Case cycle time, definition: Elapsed days from case open to outcome., grain: service-month }
+  - { name: statutory_breach_count, label: Statutory breaches, definition: Cases exceeding a statutory time limit., grain: service-month }
+  - { name: first_contact_resolution, label: First contact resolution, definition: Requests resolved at first contact., grain: channel-month }
+  - { name: payment_accuracy_rate, label: Payment accuracy, definition: Payments made at the correct entitlement., grain: scheme-month }
+  - { name: overpayment_value, label: Overpayment value, definition: Value of payments above entitlement., grain: scheme-month }
+  - { name: collection_rate, label: Collection rate, definition: Charged revenue collected in period., grain: scheme-month }
+  - { name: complaint_rate, label: Complaint rate, definition: Complaints per thousand cases., grain: service-month }
+  - { name: dataset_publication_currency, label: Publication currency, definition: Days since a published dataset was last refreshed., grain: dataset }
+  - { name: appeal_overturn_rate, label: Appeal overturn rate, definition: Share of appealed decisions overturned., grain: scheme-month }
+
+sampleDecisions:
+  - consumerPersona: Service Delivery Manager
+    decision: Which cases to escalate before they breach a statutory time limit
+    cadence: Daily
+    currentWorkaround: A weekly report reviewed manually against case notes
+    latencyTolerance: Daily
+    consequence: Statutory limits are breached and reported to the regulator after the fact.
+    questions:
+      - Which open cases are within five days of a statutory limit?
+      - Which teams hold the most at-risk cases?
+      - How many breached last month, and in which services?
+  - consumerPersona: Payments Assurance Officer
+    decision: Which entitlement awards to review before payment
+    cadence: Weekly
+    currentWorkaround: A random sample review after payment has been made
+    latencyTolerance: Daily
+    consequence: Overpayments are found after the money has left, and recovery is difficult.
+    questions:
+      - Which awards this week differ materially from the expected entitlement?
+      - Which reasons most often lead to an overpayment?
+      - What value is exposed per review candidate?
+  - consumerPersona: Transparency Officer
+    decision: Which published datasets need refreshing before the next transparency deadline
+    cadence: Monthly
+    currentWorkaround: A manually maintained publication tracker
+    latencyTolerance: Weekly
+    consequence: Published data goes stale and information requests find figures nobody can reproduce.
+    questions:
+      - Which published datasets are past their refresh commitment?
+      - Which have no catalogue record or licence?
+      - Which figures cannot currently be reproduced from source?
+
+platformProfiles:
+  - { key: on-prem, name: On-premises warehouse, bronze: Landing schema, silver: Conformed schema, gold: Reporting schema, ingestion: Scheduled extracts, orchestration: Enterprise scheduler }
+  - { key: warehouse, name: Sovereign cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PUBLISH schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+
+glossary:
+  - { term: Statutory limit, definition: A legally binding time limit for completing a case. }
+  - { term: Special category data, definition: Personal data needing extra protection, such as health or ethnicity. }
+  - { term: Open licence, definition: A licence permitting reuse of published data with attribution. }
+  - { term: Catalogue record, definition: The machine-readable description that makes a dataset discoverable. }
+
+seedProducts:
+  - key: statutory-case-risk
+    name: Statutory Case Risk
+    domainKey: service-delivery
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Open cases ranked by proximity to a statutory time limit, by team and service.
+    persona: Service Delivery Manager
+    decision: Which cases to escalate before they breach a statutory time limit
+    cadence: Daily
+    workaround: A weekly report reviewed manually against case notes
+    consequence: Statutory limits are breached and reported to the regulator after the fact.
+    questions:
+      - Which open cases are within five days of a statutory limit?
+      - Which teams hold the most at-risk cases?
+      - How many breached last month, and in which services?
+    sources: [{ name: Case management extract, system: Case management system }]
+    entities:
+      - { name: Case, key: case_id, attributes: [case_id, person_id, service_code, opened_at, statutory_due_date, owning_team, status] }
+      - { name: Person, key: person_id, attributes: [person_id, person_name*, postcode*, household_id] }
+    metrics:
+      - { name: open_cases, label: Open cases, definition: Cases not yet closed., grain: service-week }
+      - { name: statutory_breach_count, label: Statutory breaches, definition: Cases exceeding a statutory time limit., grain: service-month }
+    controls: [lawful-basis, special-category, retention-statutory, equality-duty]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 210
+    platformProfileKey: on-prem
+    value: { statement: Cut statutory breaches by 40% within two quarters, baseline: 95, unit: breaches per quarter, expectedChange: -38, method: Breach counts from the statutory performance return, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 33, queries30d: 700, sessions30d: 280, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: entitlement-assurance
+    name: Entitlement Assurance
+    domainKey: benefits-payments
+    archetype: INSIGHT_RECOMMENDATION
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Pre-payment award review candidates with exposure value and reason attribution.
+    persona: Payments Assurance Officer
+    decision: Which entitlement awards to review before payment
+    cadence: Weekly
+    workaround: A random sample review performed after payment
+    consequence: Overpayments are discovered after the money has left and recovery is difficult.
+    questions:
+      - Which awards this week differ materially from the expected entitlement?
+      - Which reasons most often lead to an overpayment?
+      - What value is exposed per review candidate?
+    sources: [{ name: Award extract, system: Benefits system }, { name: Payment file, system: Payments platform }]
+    entities:
+      - { name: Award, key: award_id, attributes: [award_id, person_id, scheme_code, award_amount, expected_amount, decided_at, decision_reason_code] }
+      - { name: Payment, key: payment_id, attributes: [payment_id, award_id, paid_amount, paid_at] }
+    metrics:
+      - { name: payment_accuracy_rate, label: Payment accuracy, definition: Payments made at the correct entitlement., grain: scheme-month }
+      - { name: overpayment_value, label: Overpayment value, definition: Value of payments above entitlement., grain: scheme-month }
+    controls: [automated-decision, lawful-basis, retention-statutory, residency]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 05:00
+    qualityScore: 92
+    costToServeUsdPerMonth: 260
+    platformProfileKey: warehouse
+    value: { statement: Prevent a fifth of overpayment value before disbursement, baseline: 0, unit: percent of overpayment value prevented pre-payment, expectedChange: 20, method: Compare pre-payment interventions against the prior year overpayment total, date: '2027-04-30', realised: true, measured: 22 }
+    telemetry: { consumers: 15, queries30d: 260, sessions30d: 110, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: open-data-currency
+    name: Open Data Currency
+    domainKey: transparency-open-data
+    archetype: REFERENCE_DATA
+    tier: SOURCE_ALIGNED
+    description: Published dataset inventory with refresh currency, licence and catalogue completeness.
+    persona: Transparency Officer
+    decision: Which published datasets need refreshing before the next transparency deadline
+    cadence: Monthly
+    workaround: A manually maintained publication tracker
+    consequence: Published data goes stale and information requests find figures nobody can reproduce.
+    questions:
+      - Which published datasets are past their refresh commitment?
+      - Which have no catalogue record or licence?
+      - Which figures cannot currently be reproduced from source?
+    sources: [{ name: Publication register, system: Open data portal }]
+    entities:
+      - { name: Dataset, key: dataset_id, attributes: [dataset_id, title, licence_code, last_refreshed_at, refresh_commitment_days, catalogue_complete_flag] }
+    metrics:
+      - { name: dataset_publication_currency, label: Publication currency, definition: Days since a published dataset was last refreshed., grain: dataset }
+      - { name: catalogue_completeness, label: Catalogue completeness, definition: Share of datasets with a complete catalogue record., grain: month }
+    controls: [open-data-standard, foi-readiness, retention-statutory]
+    patterns: [certified-dashboard, bulk-extract, api-embedded]
+    freshness: Weekly
+    qualityScore: 83
+    costToServeUsdPerMonth: 70
+    platformProfileKey: warehouse
+    value: { statement: Bring every committed dataset within its refresh commitment, baseline: 62, unit: percent of datasets within commitment, expectedChange: 35, method: Monthly publication register audit, date: '2027-02-28', realised: false }
+    telemetry: { consumers: 4, queries30d: 25, sessions30d: 12, daysSinceLastUse: 110, freshnessBreaches30d: 0 }

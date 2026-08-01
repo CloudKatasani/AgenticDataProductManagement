@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink-50: #f6f7f9;
+  --color-ink-100: #eceef2;
+  --color-ink-200: #d6dae2;
+  --color-ink-300: #b2bac8;
+  --color-ink-400: #8794a8;
+  --color-ink-500: #66738a;
+  --color-ink-600: #4f5b71;
+  --color-ink-700: #3d4759;
+  --color-ink-800: #2b3242;
+  --color-ink-900: #1b2030;
+  --color-accent-50: #eef4ff;
+  --color-accent-100: #dbe6ff;
+  --color-accent-500: #3b62d9;
+  --color-accent-600: #2f4fb5;
+  --color-accent-700: #26408f;
+  --color-agent-50: #fbf4ec;
+  --color-agent-200: #f0d9bd;
+  --color-agent-600: #a4661a;
+  --color-agent-700: #7d4d12;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-ink-50);
+  color: var(--color-ink-900);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Visible focus everywhere — WCAG AA, not a preference. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-600);
+  outline-offset: 2px;
+}
+
+.agent-proposed {
+  background-color: var(--color-agent-50);
+  border-left: 3px solid var(--color-agent-600);
+}
+
+.prose-tight p {
+  margin-bottom: 0.5rem;
+}

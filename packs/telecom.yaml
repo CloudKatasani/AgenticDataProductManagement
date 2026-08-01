@@ -1,0 +1,205 @@
+key: telecom
+name: Telecom
+industry: Fixed and mobile telecommunications
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a fixed and mobile network operator.
+  Illustrative and editable — not authoritative.
+editable: true
+
+domains:
+  - { key: subscriber, name: Subscriber, description: Customers, subscriptions and consent. }
+  - { key: network-performance, name: Network Performance, description: Cells, nodes, quality and capacity. }
+  - { key: service-assurance, name: Service Assurance, description: Faults, tickets and restoration. }
+  - { key: billing-revenue, name: Billing & Revenue, description: Rating, invoicing and revenue assurance. }
+  - { key: sales-channel, name: Sales & Channel, description: Acquisition, retail and partner channels. }
+  - { key: devices, name: Devices, description: Handsets, CPE and device lifecycle. }
+  - { key: field-operations, name: Field Operations, description: Installations, repairs and engineer scheduling. }
+  - { key: churn-retention, name: Churn & Retention, description: Retention risk, offers and outcomes. }
+
+conformedBackbone:
+  description: Customer to subscription to service to network element.
+  entities:
+    - { key: customer, name: Customer }
+    - { key: subscription, name: Subscription }
+    - { key: service, name: Service }
+    - { key: network-element, name: Network Element }
+  links:
+    - { from: Customer, to: Subscription, cardinality: ONE_TO_MANY }
+    - { from: Subscription, to: Service, cardinality: ONE_TO_MANY }
+    - { from: Service, to: Network Element, cardinality: MANY_TO_MANY }
+
+canonicalEntities:
+  - { key: customer, name: Customer, description: A person or organisation holding services. }
+  - { key: subscription, name: Subscription, description: A contracted service holding. }
+  - { key: service, name: Service, description: A delivered service instance. }
+  - { key: network-element, name: Network Element, description: A cell, node or access device. }
+  - { key: usage-record, name: Usage Record, description: A rated or unrated usage event. }
+  - { key: ticket, name: Ticket, description: A fault or service request. }
+  - { key: device, name: Device, description: A handset or customer premises equipment. }
+  - { key: site, name: Site, description: A physical network location. }
+  - { key: offer, name: Offer, description: A commercial proposition. }
+  - { key: invoice, name: Invoice, description: A billed statement against an account. }
+  - { key: outage, name: Outage, description: A service-affecting network event. }
+
+controls:
+  - { key: cdr-privacy, name: Usage record privacy, category: Privacy, jurisdiction: General, requirement: Usage records are pseudonymised for analytics; direct identifiers require a stated purpose. }
+  - { key: lawful-intercept-separation, name: Lawful process separation, category: Regulatory, jurisdiction: General, requirement: Lawful process data is segregated from commercial analytics environments. }
+  - { key: consent-marketing, name: Marketing consent, category: Privacy, jurisdiction: General, requirement: Marketing contact requires current recorded consent per channel. }
+  - { key: location-data, name: Location data handling, category: Privacy, jurisdiction: General, requirement: Network location data is aggregated before analytical use unless a lawful basis exists. }
+  - { key: reg-qos-reporting, name: Quality of service reporting, category: Regulatory, jurisdiction: General, requirement: Published service quality figures must be reproducible from source records. }
+  - { key: retention-usage, name: Usage record retention, category: Records, jurisdiction: General, requirement: Usage records are retained only for the permitted period. }
+  - { key: number-portability, name: Number portability integrity, category: Regulatory, jurisdiction: General, requirement: Ported numbers must resolve to the correct current provider in every product. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Subscriber data remains in the licensed operating region. }
+
+starterMetrics:
+  - { name: active_subscriptions, label: Active subscriptions, definition: Subscriptions in an active state., grain: subscription }
+  - { name: arpu, label: ARPU, definition: Average revenue per user in the period., grain: segment-month }
+  - { name: churn_rate, label: Churn rate, definition: Share of subscriptions terminated in the period., grain: segment-month }
+  - { name: network_availability, label: Network availability, definition: Share of time a service was available., grain: cell-day }
+  - { name: dropped_call_rate, label: Dropped call rate, definition: Calls dropped over calls carried., grain: cell-day }
+  - { name: data_throughput_mbps, label: Data throughput, definition: Mean user throughput., grain: cell-hour }
+  - { name: mean_time_to_restore, label: Mean time to restore, definition: Mean elapsed time from fault raise to restoration., grain: region-month }
+  - { name: first_visit_resolution, label: First visit resolution, definition: Field jobs completed on the first visit., grain: region-month }
+  - { name: acquisition_cost, label: Acquisition cost, definition: Cost to acquire one new subscription., grain: channel-month }
+  - { name: billing_dispute_rate, label: Billing dispute rate, definition: Invoices disputed over invoices issued., grain: month }
+
+sampleDecisions:
+  - consumerPersona: Network Operations Lead
+    decision: Which cells to prioritise for capacity upgrade next quarter
+    cadence: Quarterly
+    currentWorkaround: Performance exports joined manually to a planning spreadsheet
+    latencyTolerance: Weekly
+    consequence: Capital goes to cells that are congested but carry few customers.
+    questions:
+      - Which cells breached the congestion threshold most often last quarter?
+      - How many subscribers are served by each?
+      - Which of those cells also show elevated churn?
+  - consumerPersona: Retention Manager
+    decision: Which subscribers to target with a retention offer this month
+    cadence: Monthly
+    currentWorkaround: A churn score list with no service-experience context
+    latencyTolerance: Weekly
+    consequence: Offers go to customers who would have stayed, and miss those with a service problem.
+    questions:
+      - Which subscribers are at high churn risk this month?
+      - Which of those had a service fault in the last 60 days?
+      - What is the expected margin retained per offer?
+  - consumerPersona: Field Operations Planner
+    decision: Which jobs to schedule to which engineers tomorrow
+    cadence: Daily
+    currentWorkaround: A scheduling tool with no skills or first-visit history
+    latencyTolerance: Hourly
+    consequence: Jobs are re-visited, and appointment commitments are missed.
+    questions:
+      - Which open jobs breach their appointment window tomorrow?
+      - Which engineers have the right skills in the right area?
+      - Which job types have the worst first-visit resolution?
+
+platformProfiles:
+  - { key: lakehouse, name: Lakehouse, bronze: Bronze event tables, silver: Conformed silver tables, gold: Gold serving tables, ingestion: Streaming ingest plus batch load, orchestration: Workflow scheduler }
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+
+glossary:
+  - { term: ARPU, definition: Average revenue per user over a period. }
+  - { term: Cell, definition: The coverage area served by one radio sector. }
+  - { term: CPE, definition: Customer premises equipment — the device installed at the customer's location. }
+  - { term: Mean time to restore, definition: The average elapsed time between a fault being raised and service being restored. }
+
+seedProducts:
+  - key: cell-capacity
+    name: Cell Capacity & Experience
+    domainKey: network-performance
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: Cell congestion, throughput and served-subscriber counts on one certified definition.
+    persona: Network Operations Lead
+    decision: Which cells to prioritise for capacity upgrade next quarter
+    cadence: Quarterly
+    workaround: Performance exports joined manually to a planning spreadsheet
+    consequence: Capital goes to cells that are congested but serve few customers.
+    questions:
+      - Which cells breached the congestion threshold most often last quarter?
+      - How many subscribers are served by each?
+      - Which of those cells also show elevated churn?
+    sources: [{ name: Radio performance counters, system: OSS }, { name: Subscription extract, system: BSS }]
+    entities:
+      - { name: Network Element, key: cell_id, attributes: [cell_id, site_id, technology_code, congestion_hours_units, throughput_mbps] }
+      - { name: Subscription, key: subscription_id, attributes: [subscription_id, customer_id, primary_cell_id, status, started_at] }
+    metrics:
+      - { name: network_availability, label: Network availability, definition: Share of time a service was available., grain: cell-day }
+      - { name: data_throughput_mbps, label: Data throughput, definition: Mean user throughput., grain: cell-hour }
+      - { name: subscribers_served, label: Subscribers served, definition: Distinct subscriptions homed to a cell., grain: cell-month }
+    controls: [location-data, reg-qos-reporting, residency]
+    patterns: [certified-dashboard, self-serve-exploration, conversational]
+    freshness: Hourly
+    qualityScore: 93
+    costToServeUsdPerMonth: 720
+    platformProfileKey: lakehouse
+    value: { statement: Shift a third of capacity capital to the cells with the highest subscriber impact, baseline: 0, unit: percent of capital reallocated, expectedChange: 33, method: Compare planned capital allocation against the impact ranking, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 38, queries30d: 900, sessions30d: 350, daysSinceLastUse: 1, freshnessBreaches30d: 2 }
+
+  - key: churn-risk
+    name: Churn Risk & Experience
+    domainKey: churn-retention
+    archetype: INSIGHT_RECOMMENDATION
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Churn risk joined to recent service experience so offers target the right cause.
+    persona: Retention Manager
+    decision: Which subscribers to target with a retention offer this month
+    cadence: Monthly
+    workaround: A churn score list with no service-experience context
+    consequence: Offers go to customers who would have stayed, and miss those with a service problem.
+    questions:
+      - Which subscribers are at high churn risk this month?
+      - Which of those had a service fault in the last 60 days?
+      - What is the expected margin retained per offer?
+    sources: [{ name: Subscription extract, system: BSS }, { name: Ticket extract, system: Service assurance }]
+    entities:
+      - { name: Subscription, key: subscription_id, attributes: [subscription_id, customer_id, tenure_months, monthly_revenue_amount, churn_risk_score] }
+      - { name: Ticket, key: ticket_id, attributes: [ticket_id, subscription_id, raised_at, restored_at, fault_type_code] }
+    metrics:
+      - { name: churn_rate, label: Churn rate, definition: Share of subscriptions terminated in the period., grain: segment-month }
+      - { name: arpu, label: ARPU, definition: Average revenue per user in the period., grain: segment-month }
+      - { name: retained_margin, label: Retained margin, definition: Expected margin retained per accepted offer., grain: offer }
+    controls: [consent-marketing, cdr-privacy, retention-usage, residency]
+    patterns: [certified-dashboard, operational-activation, ml-feature]
+    freshness: Daily by 07:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 610
+    platformProfileKey: lakehouse
+    value: { statement: Improve retention offer acceptance from 18% to 26%, baseline: 18, unit: percent acceptance, expectedChange: 8, method: Offer acceptance measured monthly against a holdout group, date: '2027-02-28', realised: true, measured: 25 }
+    telemetry: { consumers: 29, queries30d: 610, sessions30d: 240, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: field-job-scheduling
+    name: Field Job Scheduling
+    domainKey: field-operations
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Open field jobs with appointment risk, skills match and first-visit history.
+    persona: Field Operations Planner
+    decision: Which jobs to schedule to which engineers tomorrow
+    cadence: Daily
+    workaround: A scheduling tool with no skills or first-visit history
+    consequence: Jobs are revisited and appointment commitments are missed.
+    questions:
+      - Which open jobs breach their appointment window tomorrow?
+      - Which engineers have the right skills in the right area?
+      - Which job types have the worst first-visit resolution?
+    sources: [{ name: Work order extract, system: Field service platform }]
+    entities:
+      - { name: Job, key: job_id, attributes: [job_id, subscription_id, job_type_code, appointment_at, region_code, status] }
+      - { name: Engineer, key: engineer_id, attributes: [engineer_id, engineer_name*, skills_code, home_region_code] }
+    metrics:
+      - { name: first_visit_resolution, label: First visit resolution, definition: Field jobs completed on the first visit., grain: region-month }
+      - { name: appointment_breach_count, label: Appointment breaches, definition: Jobs missing their committed appointment window., grain: region-day }
+    controls: [consent-marketing, retention-usage, residency, cdr-privacy]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Every 30 minutes
+    qualityScore: 86
+    costToServeUsdPerMonth: 280
+    platformProfileKey: warehouse
+    value: { statement: Raise first-visit resolution by five percentage points, baseline: 74, unit: percent of jobs resolved first visit, expectedChange: 5, method: Field platform completion codes measured monthly, date: '2027-01-31', realised: false }
+    telemetry: { consumers: 16, queries30d: 340, sessions30d: 140, daysSinceLastUse: 3, freshnessBreaches30d: 1 }

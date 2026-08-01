@@ -1,0 +1,205 @@
+key: manufacturing
+name: Manufacturing
+industry: Discrete and process manufacturing
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a manufacturer running plants, lines and a supplier base.
+  Illustrative and editable — not authoritative.
+editable: true
+
+domains:
+  - { key: production, name: Production, description: Lines, work orders, output and downtime. }
+  - { key: quality, name: Quality, description: Inspections, defects, scrap and rework. }
+  - { key: maintenance, name: Maintenance, description: Asset health, planned and reactive work. }
+  - { key: supply-procurement, name: Supply & Procurement, description: Suppliers, materials and inbound logistics. }
+  - { key: inventory-warehouse, name: Inventory & Warehouse, description: Raw, WIP and finished goods positions. }
+  - { key: planning, name: Planning, description: Demand, capacity and production scheduling. }
+  - { key: safety-ehs, name: Safety & EHS, description: Incidents, hazards and environmental reporting. }
+  - { key: cost-margin, name: Cost & Margin, description: Standard cost, variance and product profitability. }
+
+conformedBackbone:
+  description: Plant to line to work order to material.
+  entities:
+    - { key: plant, name: Plant }
+    - { key: line, name: Line }
+    - { key: work-order, name: Work Order }
+    - { key: material, name: Material }
+  links:
+    - { from: Plant, to: Line, cardinality: ONE_TO_MANY }
+    - { from: Line, to: Work Order, cardinality: ONE_TO_MANY }
+    - { from: Work Order, to: Material, cardinality: MANY_TO_MANY }
+
+canonicalEntities:
+  - { key: plant, name: Plant, description: A manufacturing site. }
+  - { key: line, name: Line, description: A production line or cell within a plant. }
+  - { key: work-order, name: Work Order, description: An instruction to produce a quantity of a material. }
+  - { key: material, name: Material, description: A raw, intermediate or finished item. }
+  - { key: batch, name: Batch, description: A produced lot traceable to inputs. }
+  - { key: asset, name: Asset, description: A machine or piece of equipment. }
+  - { key: downtime-event, name: Downtime Event, description: A period when a line was not producing. }
+  - { key: inspection, name: Inspection, description: A quality check with an outcome. }
+  - { key: supplier, name: Supplier, description: A provider of materials or services. }
+  - { key: shipment, name: Shipment, description: Goods moving inbound or outbound. }
+  - { key: incident, name: Incident, description: A safety or environmental event. }
+
+controls:
+  - { key: batch-traceability, name: Batch traceability, category: Regulatory, jurisdiction: General, requirement: Every finished batch must be traceable to its input lots and process parameters. }
+  - { key: ehs-reporting, name: Environmental and safety reporting, category: Regulatory, jurisdiction: General, requirement: Reportable incidents and emissions are recorded with auditable lineage. }
+  - { key: recall-readiness, name: Recall readiness, category: Safety, jurisdiction: General, requirement: A recall query must return affected batches and customers within a stated time. }
+  - { key: supplier-confidentiality, name: Supplier terms confidentiality, category: Commercial, jurisdiction: General, requirement: Supplier pricing and terms are restricted to named commercial roles. }
+  - { key: retention-production, name: Production record retention, category: Records, jurisdiction: General, requirement: Production and quality records are retained for the product's regulated life. }
+  - { key: worker-privacy, name: Worker data privacy, category: Privacy, jurisdiction: General, requirement: Operator identifiers are excluded from performance analytics unless a stated purpose requires them. }
+  - { key: export-control, name: Export control, category: Regulatory, jurisdiction: General, requirement: Controlled item data is restricted to authorised jurisdictions and personnel. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Plant operational data remains within its operating region unless a transfer basis exists. }
+
+starterMetrics:
+  - { name: oee, label: Overall equipment effectiveness, definition: Availability times performance times quality., grain: line-day }
+  - { name: throughput_units, label: Throughput, definition: Good units produced., grain: line-day }
+  - { name: unplanned_downtime_minutes, label: Unplanned downtime, definition: Minutes lost to unplanned stoppages., grain: line-day }
+  - { name: scrap_rate, label: Scrap rate, definition: Scrapped units over units started., grain: line-day }
+  - { name: first_pass_yield, label: First pass yield, definition: Units passing inspection without rework., grain: line-day }
+  - { name: schedule_adherence, label: Schedule adherence, definition: Work orders completed on the planned day., grain: plant-week }
+  - { name: mean_time_between_failures, label: MTBF, definition: Mean operating time between asset failures., grain: asset-month }
+  - { name: supplier_otif, label: Supplier OTIF, definition: Inbound deliveries on time and in full., grain: supplier-month }
+  - { name: inventory_days, label: Inventory days, definition: Days of inventory cover at current consumption., grain: material-plant }
+  - { name: cost_variance, label: Cost variance, definition: Actual cost less standard cost., grain: material-month }
+
+sampleDecisions:
+  - consumerPersona: Plant Manager
+    decision: Which line to prioritise for engineering support this shift
+    cadence: Daily
+    currentWorkaround: A morning stand-up using each line's own downtime log
+    latencyTolerance: Hourly
+    consequence: Engineering attention goes to the loudest line, not the costliest one.
+    questions:
+      - Which lines lost the most output to unplanned downtime yesterday?
+      - What were the top three downtime causes on each?
+      - Which of those causes recurred in the last 30 days?
+  - consumerPersona: Quality Manager
+    decision: Which defect modes to open a corrective action against
+    cadence: Weekly
+    currentWorkaround: Inspection exports pivoted by hand
+    latencyTolerance: Daily
+    consequence: Corrective actions are opened on symptoms rather than on the costliest defect modes.
+    questions:
+      - Which defect modes drove the most scrap value last month?
+      - Which materials or suppliers are implicated?
+      - Which lines show a rising trend?
+  - consumerPersona: Supply Planner
+    decision: Which materials to expedite to protect next week's schedule
+    cadence: Weekly
+    currentWorkaround: Manual comparison of the schedule against inventory reports
+    latencyTolerance: Daily
+    consequence: Lines stop for want of a material that could have been expedited.
+    questions:
+      - Which materials fall below cover before their next receipt?
+      - Which suppliers have the worst recent OTIF?
+      - What production value is exposed per material?
+
+platformProfiles:
+  - { key: lakehouse, name: Lakehouse, bronze: Bronze tables per plant source, silver: Conformed silver tables, gold: Gold serving tables, ingestion: Streaming and batch file load, orchestration: Workflow scheduler }
+  - { key: on-prem, name: On-premises historian plus warehouse, bronze: Historian raw tags, silver: Conformed process tables, gold: Reporting schema, ingestion: Historian extract, orchestration: Enterprise scheduler }
+
+glossary:
+  - { term: OEE, definition: Overall equipment effectiveness — availability times performance times quality. }
+  - { term: First pass yield, definition: The share of units that pass inspection without rework. }
+  - { term: OTIF, definition: On time and in full — a delivery meeting both date and quantity. }
+  - { term: WIP, definition: Work in progress — material started but not yet finished. }
+
+seedProducts:
+  - key: line-performance
+    name: Line Performance
+    domainKey: production
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: OEE, downtime cause and output by line, defined once across every plant.
+    persona: Plant Manager
+    decision: Which line to prioritise for engineering support this shift
+    cadence: Daily
+    workaround: A morning stand-up using each line's own downtime log
+    consequence: Engineering attention goes to the loudest line rather than the costliest one.
+    questions:
+      - Which lines lost the most output to unplanned downtime yesterday?
+      - What were the top three downtime causes on each?
+      - Which of those causes recurred in the last 30 days?
+    sources: [{ name: MES production extract, system: MES }, { name: Historian downtime tags, system: Historian }]
+    entities:
+      - { name: Work Order, key: work_order_id, attributes: [work_order_id, line_id, material_id, planned_units, produced_units, started_at] }
+      - { name: Downtime Event, key: downtime_id, attributes: [downtime_id, line_id, cause_code, started_at, duration_units] }
+    metrics:
+      - { name: oee, label: Overall equipment effectiveness, definition: Availability times performance times quality., grain: line-day }
+      - { name: unplanned_downtime_minutes, label: Unplanned downtime, definition: Minutes lost to unplanned stoppages., grain: line-day }
+      - { name: throughput_units, label: Throughput, definition: Good units produced., grain: line-day }
+    controls: [worker-privacy, retention-production, residency]
+    patterns: [certified-dashboard, self-serve-exploration, conversational]
+    freshness: Hourly
+    qualityScore: 92
+    costToServeUsdPerMonth: 470
+    platformProfileKey: lakehouse
+    value: { statement: Recover two OEE points across the top three lines, baseline: 68, unit: OEE percentage points, expectedChange: 2, method: OEE measured monthly per line against the prior year, date: '2027-02-28', realised: true, measured: 70.4 }
+    telemetry: { consumers: 55, queries30d: 1250, sessions30d: 480, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: defect-cost
+    name: Defect Cost & Traceability
+    domainKey: quality
+    archetype: INSIGHT_RECOMMENDATION
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Scrap and rework cost by defect mode, traced to material lot and supplier.
+    persona: Quality Manager
+    decision: Which defect modes to open a corrective action against
+    cadence: Weekly
+    workaround: Inspection exports pivoted by hand each week
+    consequence: Corrective actions target symptoms rather than the costliest defect modes.
+    questions:
+      - Which defect modes drove the most scrap value last month?
+      - Which materials or suppliers are implicated?
+      - Which lines show a rising trend?
+    sources: [{ name: Inspection extract, system: QMS }, { name: Batch genealogy, system: MES }]
+    entities:
+      - { name: Inspection, key: inspection_id, attributes: [inspection_id, batch_id, defect_code, scrap_units, inspected_at] }
+      - { name: Batch, key: batch_id, attributes: [batch_id, material_id, supplier_id, line_id, produced_at] }
+    metrics:
+      - { name: scrap_rate, label: Scrap rate, definition: Scrapped units over units started., grain: line-day }
+      - { name: scrap_cost, label: Scrap cost, definition: Standard cost of scrapped units., grain: defect-month }
+      - { name: first_pass_yield, label: First pass yield, definition: Units passing inspection without rework., grain: line-day }
+    controls: [batch-traceability, recall-readiness, retention-production, supplier-confidentiality]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 320
+    platformProfileKey: lakehouse
+    value: { statement: Cut scrap cost by 8% across the top five defect modes, baseline: 100, unit: index of monthly scrap cost, expectedChange: -8, method: Monthly scrap cost indexed to the trailing year, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 26, queries30d: 430, sessions30d: 170, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: material-exposure
+    name: Material Exposure
+    domainKey: supply-procurement
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: Material cover against the production schedule with supplier OTIF context.
+    persona: Supply Planner
+    decision: Which materials to expedite to protect next week's schedule
+    cadence: Weekly
+    workaround: Manual comparison of the schedule against inventory reports
+    consequence: Lines stop for want of a material that could have been expedited.
+    questions:
+      - Which materials fall below cover before their next receipt?
+      - Which suppliers have the worst recent OTIF?
+      - What production value is exposed per material?
+    sources: [{ name: Inventory extract, system: ERP }, { name: Purchase order extract, system: ERP }]
+    entities:
+      - { name: Material, key: material_id, attributes: [material_id, plant_id, on_hand_units, safety_stock_units, standard_cost_amount] }
+      - { name: Supplier, key: supplier_id, attributes: [supplier_id, supplier_name, contact_email*, otif_rate_pct] }
+    metrics:
+      - { name: inventory_days, label: Inventory days, definition: Days of cover at current consumption., grain: material-plant }
+      - { name: supplier_otif, label: Supplier OTIF, definition: Inbound deliveries on time and in full., grain: supplier-month }
+    controls: [supplier-confidentiality, export-control, residency]
+    patterns: [certified-dashboard, api-embedded, bulk-extract]
+    freshness: Daily by 05:00
+    qualityScore: 85
+    costToServeUsdPerMonth: 180
+    platformProfileKey: on-prem
+    value: { statement: Halve line stoppages caused by material shortage, baseline: 22, unit: stoppages per quarter, expectedChange: -11, method: Stoppage reason codes from the MES, date: '2027-04-30', realised: false }
+    telemetry: { consumers: 11, queries30d: 130, sessions30d: 55, daysSinceLastUse: 100, freshnessBreaches30d: 3 }

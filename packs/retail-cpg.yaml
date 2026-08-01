@@ -1,0 +1,206 @@
+key: retail-cpg
+name: Retail & CPG
+industry: Retail and consumer packaged goods
+version: 1.0.0
+description: >-
+  Domains, backbone and controls for a retailer or consumer goods manufacturer.
+  Illustrative and editable — not authoritative.
+editable: true
+
+domains:
+  - { key: customer-loyalty, name: Customer & Loyalty, description: Shoppers, loyalty membership and consent. }
+  - { key: merchandising, name: Merchandising, description: Assortment, pricing and promotion. }
+  - { key: supply-chain, name: Supply Chain, description: Planning, replenishment and logistics. }
+  - { key: inventory, name: Inventory, description: Stock position across stores and warehouses. }
+  - { key: store-operations, name: Store Operations, description: Labour, availability and execution. }
+  - { key: ecommerce, name: eCommerce, description: Digital storefront, basket and fulfilment. }
+  - { key: supplier-trade, name: Supplier & Trade, description: Vendors, terms and trade funding. }
+  - { key: finance-margin, name: Finance & Margin, description: Sales, cost and margin reporting. }
+
+conformedBackbone:
+  description: Shopper to transaction to product to location.
+  entities:
+    - { key: shopper, name: Shopper }
+    - { key: transaction, name: Transaction }
+    - { key: product, name: Product }
+    - { key: location, name: Location }
+  links:
+    - { from: Shopper, to: Transaction, cardinality: ONE_TO_MANY }
+    - { from: Transaction, to: Product, cardinality: MANY_TO_MANY }
+    - { from: Location, to: Transaction, cardinality: ONE_TO_MANY }
+
+canonicalEntities:
+  - { key: shopper, name: Shopper, description: An identified or anonymous customer. }
+  - { key: transaction, name: Transaction, description: A basket purchased at a point in time. }
+  - { key: product, name: Product, description: A sellable item at SKU level. }
+  - { key: location, name: Location, description: A store, warehouse or fulfilment node. }
+  - { key: inventory-position, name: Inventory Position, description: Stock on hand at a location and time. }
+  - { key: promotion, name: Promotion, description: A time-bounded price or offer mechanic. }
+  - { key: supplier, name: Supplier, description: A vendor supplying products. }
+  - { key: purchase-order, name: Purchase Order, description: A commitment to buy from a supplier. }
+  - { key: shipment, name: Shipment, description: Goods moving between locations. }
+  - { key: loyalty-member, name: Loyalty Member, description: A shopper enrolled in the loyalty scheme. }
+  - { key: category, name: Category, description: A merchandising grouping of products. }
+
+controls:
+  - { key: consent-marketing, name: Marketing consent, category: Privacy, jurisdiction: General, requirement: Loyalty contact data may be used for marketing only with current recorded consent. }
+  - { key: pii-minimisation, name: Personal data minimisation, category: Privacy, jurisdiction: General, requirement: Basket analytics use pseudonymous shopper keys, not direct identifiers. }
+  - { key: price-accuracy, name: Price accuracy, category: Regulatory, jurisdiction: General, requirement: Shelf and till price must match the published price for the location and time. }
+  - { key: allergen-accuracy, name: Product attribute accuracy, category: Regulatory, jurisdiction: General, requirement: Allergen and ingredient attributes must match the supplier-certified source of record. }
+  - { key: retention-transaction, name: Transaction retention, category: Records, jurisdiction: General, requirement: Transaction records are retained for the statutory tax period. }
+  - { key: supplier-terms-confidentiality, name: Supplier terms confidentiality, category: Commercial, jurisdiction: General, requirement: Supplier cost and trade terms are restricted to named commercial roles. }
+  - { key: residency, name: Data residency, category: Security, jurisdiction: General, requirement: Shopper data remains in the primary operating region. }
+  - { key: age-restricted, name: Age-restricted sales, category: Regulatory, jurisdiction: General, requirement: Age-restricted sales must carry a recorded verification outcome. }
+
+starterMetrics:
+  - { name: net_sales, label: Net sales, definition: Sales value net of returns and discounts., grain: sku-store-day }
+  - { name: units_sold, label: Units sold, definition: Unit quantity sold., grain: sku-store-day }
+  - { name: gross_margin, label: Gross margin, definition: Net sales less cost of goods., grain: sku-store-month }
+  - { name: on_shelf_availability, label: On-shelf availability, definition: Share of store-SKU-days with stock on shelf., grain: sku-store-day }
+  - { name: stock_cover_days, label: Stock cover, definition: Days of forward cover at current run rate., grain: sku-location }
+  - { name: markdown_rate, label: Markdown rate, definition: Markdown value over gross sales., grain: category-month }
+  - { name: basket_size, label: Basket size, definition: Average value per transaction., grain: transaction }
+  - { name: loyalty_penetration, label: Loyalty penetration, definition: Share of sales identified to a loyalty member., grain: store-month }
+  - { name: supplier_fill_rate, label: Supplier fill rate, definition: Ordered units delivered on time and in full., grain: supplier-month }
+  - { name: promotion_uplift, label: Promotion uplift, definition: Incremental units versus baseline during promotion., grain: promotion }
+
+sampleDecisions:
+  - consumerPersona: Category Manager
+    decision: Which SKUs to delist at the next range review
+    cadence: Quarterly
+    currentWorkaround: Sales and margin extracts joined to a supplier terms spreadsheet
+    latencyTolerance: Weekly
+    consequence: Delisting decisions are made on sales alone, ignoring margin and availability.
+    questions:
+      - Which SKUs are in the bottom decile of margin per linear metre?
+      - Which have persistent availability problems?
+      - What share of sales would transfer to remaining SKUs?
+  - consumerPersona: Store Operations Manager
+    decision: Which stores need an availability intervention this week
+    cadence: Weekly
+    currentWorkaround: A weekly availability report with no root-cause detail
+    latencyTolerance: Daily
+    consequence: Availability effort goes to the loudest store, not the worst one.
+    questions:
+      - Which stores had the worst on-shelf availability last week?
+      - Which SKUs drove the gap?
+      - Was the cause replenishment, delivery or shelf execution?
+  - consumerPersona: Supply Planner
+    decision: Which purchase orders to expedite this week
+    cadence: Weekly
+    currentWorkaround: Manual review of the open order book
+    latencyTolerance: Daily
+    consequence: Stock-outs occur on lines that could have been expedited.
+    questions:
+      - Which SKUs will fall below safety stock within 14 days?
+      - Which suppliers have the worst recent fill rate?
+      - What is the sales value at risk per line?
+
+platformProfiles:
+  - { key: lakehouse, name: Lakehouse, bronze: Bronze tables per source, silver: Conformed silver tables, gold: Gold serving tables, ingestion: Incremental file load, orchestration: Workflow scheduler }
+  - { key: warehouse, name: Cloud warehouse, bronze: RAW schema, silver: CONFORMED schema, gold: PRESENTATION schema, ingestion: Managed connector load, orchestration: Warehouse task graph }
+
+glossary:
+  - { term: SKU, definition: Stock keeping unit — the smallest sellable product identifier. }
+  - { term: On-shelf availability, definition: Whether a product a shopper wants is actually on the shelf. }
+  - { term: Markdown, definition: A permanent price reduction to clear stock. }
+  - { term: Fill rate, definition: The share of ordered units a supplier delivered on time and in full. }
+
+seedProducts:
+  - key: range-performance
+    name: Range Performance
+    domainKey: merchandising
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    blueprint: true
+    description: Sales, margin and availability by SKU and store, on one certified definition.
+    persona: Category Manager
+    decision: Which SKUs to delist at the next range review
+    cadence: Quarterly
+    workaround: Sales and margin extracts joined to a supplier terms spreadsheet
+    consequence: Delisting decisions are made on sales alone, ignoring margin and availability.
+    questions:
+      - Which SKUs are in the bottom decile of margin per linear metre?
+      - Which have persistent availability problems?
+      - What share of sales would transfer to remaining SKUs?
+    sources: [{ name: POS transaction extract, system: Point of sale }, { name: Product master, system: PIM }]
+    entities:
+      - { name: Product, key: sku_id, attributes: [sku_id, category_code, supplier_id, cost_amount, list_price_amount] }
+      - { name: Transaction, key: transaction_id, attributes: [transaction_id, sku_id, store_id, net_amount, units_sold, transacted_at] }
+    metrics:
+      - { name: net_sales, label: Net sales, definition: Sales value net of returns and discounts., grain: sku-store-day }
+      - { name: gross_margin, label: Gross margin, definition: Net sales less cost of goods., grain: sku-store-month }
+      - { name: on_shelf_availability, label: On-shelf availability, definition: Share of store-SKU-days with stock on shelf., grain: sku-store-day }
+    controls: [supplier-terms-confidentiality, price-accuracy, retention-transaction]
+    patterns: [certified-dashboard, self-serve-exploration, conversational]
+    freshness: Daily by 05:00
+    qualityScore: 93
+    costToServeUsdPerMonth: 520
+    platformProfileKey: lakehouse
+    value: { statement: Cut range review preparation from four weeks to one, baseline: 4, unit: weeks per review, expectedChange: -3, method: Category team time recording across two review cycles, date: '2027-01-31', realised: true, measured: 1 }
+    telemetry: { consumers: 63, queries30d: 1400, sessions30d: 520, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: availability-root-cause
+    name: Availability Root Cause
+    domainKey: store-operations
+    archetype: INSIGHT_RECOMMENDATION
+    tier: CONSUMER_ALIGNED
+    blueprint: true
+    description: Store availability gaps attributed to replenishment, delivery or shelf execution.
+    persona: Store Operations Manager
+    decision: Which stores need an availability intervention this week
+    cadence: Weekly
+    workaround: A weekly availability report with no root-cause detail
+    consequence: Availability effort goes to the loudest store rather than the worst one.
+    questions:
+      - Which stores had the worst on-shelf availability last week?
+      - Which SKUs drove the gap?
+      - Was the cause replenishment, delivery or shelf execution?
+    sources: [{ name: Inventory snapshot, system: Inventory system }, { name: POS transaction extract, system: Point of sale }]
+    entities:
+      - { name: Inventory Position, key: position_id, attributes: [position_id, sku_id, store_id, on_hand_units, snapshot_at, cause_code] }
+      - { name: Location, key: store_id, attributes: [store_id, region_code, format_code] }
+    # Deliberately does NOT redefine on_shelf_availability — it reuses the certified metric
+    # owned by Range Performance. One metric, one definition, one answer.
+    metrics:
+      - { name: availability_gap_hours, label: Availability gap hours, definition: Store-SKU hours with zero stock on shelf during trading., grain: sku-store-day }
+      - { name: lost_sales_value, label: Lost sales value, definition: Estimated sales lost to unavailability., grain: store-week }
+    controls: [price-accuracy, retention-transaction, residency]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 87
+    costToServeUsdPerMonth: 340
+    platformProfileKey: lakehouse
+    value: { statement: Improve on-shelf availability by 1.5 percentage points across the estate, baseline: 94.1, unit: percent availability, expectedChange: 1.5, method: Weekly availability measurement versus the prior year, date: '2027-03-31', realised: false }
+    telemetry: { consumers: 88, queries30d: 1900, sessions30d: 700, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: supplier-fill-performance
+    name: Supplier Fill Performance
+    domainKey: supplier-trade
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: Supplier delivery performance with value at risk on open orders.
+    persona: Supply Planner
+    decision: Which purchase orders to expedite this week
+    cadence: Weekly
+    workaround: Manual review of the open order book
+    consequence: Stock-outs happen on lines that could have been expedited.
+    questions:
+      - Which SKUs will fall below safety stock within 14 days?
+      - Which suppliers have the worst recent fill rate?
+      - What is the sales value at risk per line?
+    sources: [{ name: Purchase order extract, system: ERP }]
+    entities:
+      - { name: Purchase Order, key: po_id, attributes: [po_id, supplier_id, sku_id, ordered_units, promised_date, received_units] }
+      - { name: Supplier, key: supplier_id, attributes: [supplier_id, supplier_name, contact_email*, terms_code] }
+    metrics:
+      - { name: supplier_fill_rate, label: Supplier fill rate, definition: Ordered units delivered on time and in full., grain: supplier-month }
+      - { name: value_at_risk, label: Value at risk, definition: Forecast sales value exposed to late delivery., grain: sku-week }
+    controls: [supplier-terms-confidentiality, retention-transaction, residency]
+    patterns: [certified-dashboard, api-embedded, bulk-extract]
+    freshness: Daily by 07:00
+    qualityScore: 86
+    costToServeUsdPerMonth: 200
+    platformProfileKey: warehouse
+    value: { statement: Reduce stock-outs attributable to late supplier delivery by a quarter, baseline: 1200, unit: stock-out days per month, expectedChange: -300, method: Stock-out counts attributed to delivery cause, date: '2027-02-28', realised: false }
+    telemetry: { consumers: 14, queries30d: 210, sessions30d: 90, daysSinceLastUse: 4, freshnessBreaches30d: 2 }
