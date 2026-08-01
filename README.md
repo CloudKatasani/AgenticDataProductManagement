@@ -27,6 +27,10 @@ Needs Node 20.11+ and pnpm 10+.
   approval decay and veto.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — the operational guide: production build, ports,
   the optional Postgres path, where secrets live, scheduled monitoring, backup and troubleshooting.
+- **[docs/AWS.md](docs/AWS.md)** — hosting it on AWS, and **what has to change in the code first**.
+  ADPM is local-first; there is no user management yet, so a hosted instance needs network-level
+  access control. The guide is explicit about which gaps are deployment work and which are missing
+  features.
 
 Sign in with any seeded account and the password `adpm`:
 
