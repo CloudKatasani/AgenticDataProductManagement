@@ -1,4 +1,5 @@
 import type { AutonomyLevel } from '@/lib/domain/enums'
+import type { ExternalContextKind } from '@/lib/integrations/schema'
 
 /**
  * The agent registry AS DATA. Each agent declares what it is for, which stage it serves, what
@@ -19,6 +20,13 @@ export interface AgentDefinition {
   stages: number[]
   /** Artifact types this agent may read. Nothing else is ever put in its context. */
   readScope: string[]
+  /**
+   * Slices of imported external metadata (erwin, Collibra, Alation) this agent may read.
+   * Declared, recorded on every AgentAction and enforced exactly like `readScope` — invariant 6
+   * does not distinguish between context that came from an artifact and context that came from
+   * a catalogue. Omitted means the agent sees no external metadata at all.
+   */
+  externalScope?: ExternalContextKind[]
   outputType: AgentOutputType
   autonomyCeiling: AutonomyLevel
   /** When the agent must stop and escalate to a human rather than proposing. */
@@ -69,6 +77,7 @@ You never merge, decline or modify anything.`,
       'Turn profile output into a gap log and flag anomalous null rates, cardinality and pattern drift.',
     stages: [3],
     readScope: ['source-inventory', 'profile-report', 'gap-log'],
+    externalScope: ['sources', 'columnProfiles'],
     outputType: 'FIELD_PROPOSALS',
     autonomyCeiling: 'L2',
     escalationRule: 'Do not assert a root cause for an anomaly; describe it and assign severity.',
@@ -83,6 +92,7 @@ Assign a severity and suggest an owner role, never a named individual.`,
     charter: 'Propose entities, relationships and a grain statement from the source inventory.',
     stages: [4],
     readScope: ['source-inventory', 'profile-report', 'decision-register', 'logical-model'],
+    externalScope: ['entities', 'relationships', 'sources'],
     outputType: 'ARTIFACT_DRAFT',
     autonomyCeiling: 'L2',
     escalationRule:
@@ -99,6 +109,7 @@ justification. Where the grain is ambiguous, present the options rather than pic
       'Draft attribute business definitions and propose classification and PII flags for steward review.',
     stages: [5],
     readScope: ['logical-model', 'source-inventory', 'attribute-register', 'profile-report'],
+    externalScope: ['entities', 'columnProfiles', 'glossary'],
     outputType: 'FIELD_PROPOSALS',
     autonomyCeiling: 'L2',
     escalationRule:
@@ -115,6 +126,7 @@ When you are unsure of sensitivity, propose the stricter option and state your u
       'Propose metrics traced to Stage 1 questions and detect near-duplicate metric names workspace-wide.',
     stages: [6],
     readScope: ['decision-register', 'attribute-register', 'logical-model', 'semantic-model'],
+    externalScope: ['glossary', 'metrics', 'entities'],
     outputType: 'FIELD_PROPOSALS',
     autonomyCeiling: 'L2',
     escalationRule: 'Never propose a metric that traces to no Stage 1 question.',
@@ -160,6 +172,10 @@ when joined. You never assert that the product is compliant — only what is map
       'Propose sample questions, glossary terms, allowed joins and disambiguation hints, and run the Bronze/Silver rejection check.',
     stages: [10],
     readScope: ['semantic-model', 'decision-register', 'grounding-pack', 'physical-architecture'],
+    // No externalScope, deliberately. Invariant 7: grounding artifacts may reference only
+    // certified semantic-layer objects. Catalogue and modelling imports are full of physical
+    // Bronze and Silver table names, and the surest way to keep them out of a grounding pack is
+    // for the grounding agent never to see them. Asserted in tests/integrations.test.ts.
     outputType: 'ARTIFACT_DRAFT',
     autonomyCeiling: 'L2',
     escalationRule:
@@ -227,6 +243,7 @@ requests with a proposed semantic version bump. You never edit an artifact.`,
       'telemetry',
       'benefit-realisation',
     ],
+    externalScope: ['sources', 'columnProfiles', 'entities', 'relationships', 'glossary', 'metrics'],
     outputType: 'REVIEW_COMMENTS',
     autonomyCeiling: 'L2',
     escalationRule: 'Produce comments a human can accept into the review thread. Never resolve them.',

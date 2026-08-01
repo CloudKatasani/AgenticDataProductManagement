@@ -21,6 +21,9 @@ import { decisionSchema } from '@/lib/domain/enums'
 import { PRACTITIONER_ROLES } from '@/lib/domain/roles'
 import { parseAttributeWorkbook, WorkbookImportError } from '@/lib/exports/xlsx'
 import { CsvError, mergeProfileDataset, profileCsv } from '@/lib/profiling/csv'
+import { getConnector } from '@/lib/integrations/registry'
+import { ImportError, parseImport, summariseImport } from '@/lib/integrations/parse'
+import { contentHash } from '@/lib/hash'
 
 export interface Result {
   ok?: string
@@ -637,5 +640,85 @@ export async function importProfileCsvAction(
       }
     }
     return { error: error instanceof Error ? error.message : 'The profile commit failed.' }
+  }
+}
+
+/**
+ * Import metadata from an external modelling or catalogue tool (erwin, Collibra, Alation).
+ *
+ * The import becomes agent *context*, not artifact content. Nothing here commits an artifact
+ * version, so nothing here bypasses the human disposition that invariant 5 requires — an agent
+ * that reads this still produces proposals a person has to accept. The external tool's own
+ * certification state is carried through verbatim and never mapped onto ADPM's (invariant 8).
+ */
+export async function importExternalMetadataAction(
+  _prev: Result | undefined,
+  formData: FormData,
+): Promise<Result> {
+  const session = await requireSession()
+  const productId = String(formData.get('productId') ?? '')
+  const connectorKey = String(formData.get('connectorKey') ?? '')
+  const file = formData.get('file')
+
+  const connector = getConnector(connectorKey)
+  if (!connector) return { error: 'Choose a tool to import from.' }
+  if (!(file instanceof File) || file.size === 0) return { error: 'Choose an export file.' }
+
+  const product = await prisma.dataProduct.findUniqueOrThrow({
+    where: { id: productId },
+    select: { id: true, workspaceId: true },
+  })
+  try {
+    await assertCanAuthor(session.userId, product.workspaceId, `Importing from ${connector.name}`)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Not authorised.' }
+  }
+
+  let metadata
+  try {
+    metadata = parseImport(connectorKey, await file.text())
+  } catch (error) {
+    if (error instanceof ImportError) return { error: error.message, details: error.issues }
+    return { error: 'That file could not be read.' }
+  }
+
+  const summary = summariseImport(metadata)
+  const payloadJson = JSON.stringify(metadata)
+  const hash = contentHash(metadata)
+
+  const duplicate = await prisma.externalMetadataImport.findFirst({
+    where: { productId, connectorKey, contentHash: hash, archivedAt: null },
+  })
+  if (duplicate) {
+    return { ok: `No change — that export is identical to the one imported on ${duplicate.createdAt.toLocaleDateString('en-GB')}.` }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.externalMetadataImport.create({
+      data: {
+        workspaceId: product.workspaceId,
+        productId,
+        connectorKey,
+        fileName: file.name,
+        contentHash: hash,
+        payloadJson,
+        summary,
+        importedById: session.userId,
+      },
+    })
+    await recordAudit(tx, {
+      workspaceId: product.workspaceId,
+      productId,
+      actorId: session.userId,
+      action: AUDIT_ACTIONS.EXTERNAL_METADATA_IMPORTED,
+      entityType: 'ExternalMetadataImport',
+      entityId: created.id,
+      data: { connectorKey, fileName: file.name, summary, contentHash: hash },
+    })
+  })
+
+  refresh(productId)
+  return {
+    ok: `Imported from ${connector.name}: ${summary}. This is context for the agents chartered to read it — it is not artifact content, and nothing has been committed. Run an agent on the relevant stage to use it.`,
   }
 }

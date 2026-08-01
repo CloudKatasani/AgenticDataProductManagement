@@ -7,7 +7,12 @@ import { credentialStatus } from '@/lib/secrets'
 import { getGuide } from '@/lib/guides/registry'
 import { StageNav } from '@/components/studio/stage-nav'
 import { AgentPanel, ArtifactEditor, GatePanel, ReviewThread } from '@/components/studio/panels'
-import { AttributeWorkbookRoundTrip, CsvProfiler } from '@/components/studio/imports'
+import {
+  AttributeWorkbookRoundTrip,
+  CsvProfiler,
+  ExternalMetadataImporter,
+} from '@/components/studio/imports'
+import { CONNECTORS, getConnector } from '@/lib/integrations/registry'
 import { Badge, Card, CardBody, CardHeader, PageHeader } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +32,16 @@ export default async function StagePage({
 
   const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: view.product.workspaceId } })
   const credentials = await credentialStatus()
+  // Discovery, profiling, modelling and semantics are the stages where what erwin and the
+  // catalogue already know is worth having in front of an agent.
+  const METADATA_IMPORT_STAGES = [3, 4, 6]
+  const metadataImports = METADATA_IMPORT_STAGES.includes(stageNumber)
+    ? await prisma.externalMetadataImport.findMany({
+        where: { productId: id, archivedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      })
+    : []
   const gates = await prisma.gate.findMany({
     where: { productId: id },
     select: { stageNumber: true, state: true },
@@ -126,6 +141,28 @@ export default async function StagePage({
             </CardBody>
           </Card>
 
+          {METADATA_IMPORT_STAGES.includes(stageNumber) ? (
+            <ExternalMetadataImporter
+              productId={id}
+              connectors={CONNECTORS.map((c) => ({
+                key: c.key,
+                name: c.name,
+                vendor: c.vendor,
+                category: c.category,
+                fileTypes: [...c.fileTypes],
+                howToExport: c.howToExport,
+                note: c.note,
+                verified: !!c.verification,
+              }))}
+              existing={metadataImports.map((item) => ({
+                id: item.id,
+                connectorName: getConnector(item.connectorKey)?.name ?? item.connectorKey,
+                summary: item.summary,
+                fileName: item.fileName,
+                importedOn: item.createdAt.toLocaleDateString('en-GB'),
+              }))}
+            />
+          ) : null}
           {stageNumber === 3 ? <CsvProfiler productId={id} /> : null}
           {stageNumber === 5 ? <AttributeWorkbookRoundTrip productId={id} /> : null}
 
