@@ -3,6 +3,8 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { signOut } from '@/auth'
 import { MainNav } from '@/components/nav'
+import { TourOverlay } from '@/components/tour'
+import { GUIDED_TOURS } from '@/lib/guides/registry'
 import { requireSession, listWorkspacesForUser, WORKSPACE_COOKIE_NAME } from '@/lib/auth/session'
 import { roleName } from '@/lib/domain/roles'
 import { Badge } from '@/components/ui'
@@ -82,6 +84,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main id="main" className="mx-auto max-w-[1400px] px-6 py-8">
         {children}
       </main>
+      <TourOverlay tours={GUIDED_TOURS} />
       <footer className="mx-auto max-w-[1400px] px-6 pb-10 text-xs text-ink-500">
         ADPM designs, governs and manages data products. It does not run pipelines, execute
         transformations or query a warehouse — and no agent can approve, commit or publish anything.

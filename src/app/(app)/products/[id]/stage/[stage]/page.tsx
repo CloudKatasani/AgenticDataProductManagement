@@ -7,6 +7,7 @@ import { credentialStatus } from '@/lib/secrets'
 import { getGuide } from '@/lib/guides/registry'
 import { StageNav } from '@/components/studio/stage-nav'
 import { AgentPanel, ArtifactEditor, GatePanel, ReviewThread } from '@/components/studio/panels'
+import { AttributeWorkbookRoundTrip, CsvProfiler } from '@/components/studio/imports'
 import { Badge, Card, CardBody, CardHeader, PageHeader } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -124,6 +125,9 @@ export default async function StagePage({
               </ul>
             </CardBody>
           </Card>
+
+          {stageNumber === 3 ? <CsvProfiler productId={id} /> : null}
+          {stageNumber === 5 ? <AttributeWorkbookRoundTrip productId={id} /> : null}
 
           {view.artifacts.map((artifact) => (
             <ArtifactEditor
