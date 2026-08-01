@@ -200,3 +200,184 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Halve the time to prepare the monthly board risk pack, baseline: 8, unit: hours per month, expectedChange: -4, method: Time study with the risk team, date: '2027-01-31', realised: false }
     telemetry: { consumers: 6, queries30d: 30, sessions30d: 14, daysSinceLastUse: 12, freshnessBreaches30d: 0 }
+
+  - key: customer-single-view
+    name: Customer Single View
+    domainKey: customer
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: One record per customer, resolved across source systems, with consent and contactability.
+    persona: Customer Operations Lead
+    decision: Which customers to contact about a service change, and through which channel
+    cadence: Weekly
+    workaround: Customer lists exported per system and matched on email in a spreadsheet
+    consequence: The same customer is contacted three times, or not at all.
+    questions:
+      - Which customers exist in more than one source system?
+      - Which have no reachable contact channel?
+      - Which have withdrawn consent for one purpose but not another?
+    sources:
+      - { name: Customer master, system: CRM }
+      - { name: Consent register, system: Preference centre }
+    entities:
+      - name: Customer
+        key: customer_id
+        attributes: [customer_id, customer_name*, contact_email*, source_system, consent_state]
+      - name: ContactChannel
+        key: channel_id
+        attributes: [channel_id, customer_id, channel_type, verified_at, deliverable]
+    metrics:
+      - { name: duplicate_customer_records, label: Duplicate customer records, definition: Customers present in more than one source system without resolution., grain: customer }
+      - { name: contactable_customer_rate, label: Contactable customer rate, definition: Share of customers with at least one deliverable channel., grain: customer }
+      - { name: consent_coverage_by_purpose, label: Consent coverage by purpose, definition: Share of customers with valid consent for each processing purpose., grain: purpose }
+    controls: [lawful-basis, consent, minimisation, retention]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 07:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 340
+    platformProfileKey: warehouse
+    value:
+      statement: Cut duplicate customer records from 12% to under 3%
+      baseline: 12
+      unit: percent duplicated
+      expectedChange: -9
+      method: Match-rate reporting against the resolved master, monthly
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 24, queries30d: 420, sessions30d: 150, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: product-and-service-catalogue
+    name: Product & Service Catalogue
+    domainKey: product-service
+    archetype: REFERENCE_DATA
+    tier: SOURCE_ALIGNED
+    description: The authoritative list of what the organisation sells or provides, with lifecycle state and owner.
+    persona: Product Data Steward
+    decision: Which catalogue entries to retire, merge or reassign an owner to
+    cadence: Monthly
+    workaround: Several catalogue extracts, none of them agreed to be the definitive one
+    consequence: Reporting disagrees between teams because each counts a different product list.
+    questions:
+      - Which catalogue entries have no named owner?
+      - Which products are marked active but have had no activity in a year?
+      - Which entries appear under more than one identifier?
+    sources:
+      - { name: Product master, system: ERP }
+      - { name: Service catalogue, system: Service management }
+    entities:
+      - name: CatalogueItem
+        key: catalogue_item_id
+        attributes: [catalogue_item_id, item_name, item_type, lifecycle_state, owner_role]
+      - name: ItemIdentifier
+        key: identifier_id
+        attributes: [identifier_id, catalogue_item_id, identifier_system, identifier_value]
+    metrics:
+      - { name: unowned_catalogue_items, label: Unowned catalogue items, definition: Catalogue entries with no named accountable owner., grain: item }
+      - { name: dormant_active_items, label: Dormant active items, definition: Items marked active with no activity in twelve months., grain: item }
+      - { name: duplicate_identifier_count, label: Duplicate identifiers, definition: Catalogue entries reachable by more than one identifier., grain: item }
+    controls: [audit-trail, retention, access-least-privilege, residency]
+    patterns: [certified-dashboard, api-embedded, bulk-extract]
+    freshness: Weekly, Monday 06:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 220
+    platformProfileKey: warehouse
+    value:
+      statement: Give every active catalogue entry a named owner
+      baseline: 63
+      unit: percent with a named owner
+      expectedChange: 37
+      method: Catalogue stewardship review, monthly
+      date: '2027-03-31'
+      realised: true
+      measured: 99
+    telemetry: { consumers: 19, queries30d: 230, sessions30d: 90, daysSinceLastUse: 4, freshnessBreaches30d: 0 }
+
+  - key: order-to-cash
+    name: Order to Cash
+    domainKey: order-transaction
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Orders from capture through fulfilment to payment, with the delay at each handover visible.
+    persona: Order Operations Manager
+    decision: Which handover in the order process to fix next
+    cadence: Weekly
+    workaround: Order status counts pulled from each system separately with no end-to-end view
+    consequence: Cash is delayed by a handover nobody owns because nobody can see it.
+    questions:
+      - Which stage of the order process holds orders longest?
+      - How many orders are fulfilled but not yet invoiced?
+      - Which order types most often need manual intervention?
+    sources:
+      - { name: Order events, system: Order management }
+      - { name: Invoice and payment records, system: Finance }
+    entities:
+      - name: Order
+        key: order_id
+        attributes: [order_id, customer_id, order_type, placed_at, fulfilled_at, invoiced_at]
+      - name: OrderStageEvent
+        key: order_stage_event_id
+        attributes: [order_stage_event_id, order_id, stage, entered_at, exited_at, manual_touch]
+    metrics:
+      - { name: stage_dwell_time_hours, label: Stage dwell time, definition: Hours an order spends in each process stage., grain: stage }
+      - { name: fulfilled_not_invoiced, label: Fulfilled not invoiced, definition: Orders delivered but with no invoice raised., grain: order }
+      - { name: manual_intervention_rate, label: Manual intervention rate, definition: Share of orders requiring a manual touch to progress., grain: order }
+    controls: [audit-trail, retention, minimisation, access-least-privilege]
+    patterns: [certified-dashboard, operational-activation, self-serve-exploration]
+    freshness: Daily by 05:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 380
+    platformProfileKey: lakehouse
+    value:
+      statement: Reduce days sales outstanding by removing the worst handover delay
+      baseline: 47
+      unit: days sales outstanding
+      expectedChange: -9
+      method: Finance DSO reporting, monthly
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 26, queries30d: 460, sessions30d: 165, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: workforce-composition
+    name: Workforce Composition
+    domainKey: people
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Headcount, joiners, leavers and internal moves by team, reported at a grain that cannot identify an individual.
+    persona: People Director
+    decision: Which teams to prioritise for recruitment or retention effort
+    cadence: Monthly
+    workaround: HR extracts summarised by hand, with small teams accidentally identifiable
+    consequence: Either the numbers are late, or they expose individuals who should not be identifiable.
+    questions:
+      - Which teams have the highest voluntary leaver rate?
+      - How long do vacancies stay open by team?
+      - What share of moves are internal rather than external hires?
+    sources:
+      - { name: Employee records, system: HR system }
+      - { name: Recruitment pipeline, system: ATS }
+    entities:
+      - name: TeamPeriod
+        key: team_period_id
+        attributes: [team_period_id, team_id, period, headcount_fte, joiners, leavers]
+      - name: Vacancy
+        key: vacancy_id
+        attributes: [vacancy_id, team_id, opened_at, closed_at, fill_source]
+    metrics:
+      - { name: voluntary_leaver_rate, label: Voluntary leaver rate, definition: Voluntary leavers as a share of average headcount., grain: team }
+      - { name: vacancy_open_days, label: Vacancy open days, definition: Days a vacancy remains open before being filled., grain: vacancy }
+      - { name: internal_fill_share, label: Internal fill share, definition: Share of vacancies filled by an internal move., grain: team }
+    controls: [minimisation, lawful-basis, retention, access-least-privilege]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Monthly, by working day 5
+    qualityScore: 90
+    costToServeUsdPerMonth: 250
+    platformProfileKey: warehouse
+    value:
+      statement: Report workforce metrics without ever exposing an individual
+      baseline: 0
+      unit: teams reportable at a safe minimum group size
+      expectedChange: 100
+      method: Disclosure control review of every published breakdown
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 14, queries30d: 180, sessions30d: 70, daysSinceLastUse: 8, freshnessBreaches30d: 0 }

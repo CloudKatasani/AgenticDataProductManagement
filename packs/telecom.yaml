@@ -203,3 +203,229 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Raise first-visit resolution by five percentage points, baseline: 74, unit: percent of jobs resolved first visit, expectedChange: 5, method: Field platform completion codes measured monthly, date: '2027-01-31', realised: false }
     telemetry: { consumers: 16, queries30d: 340, sessions30d: 140, daysSinceLastUse: 3, freshnessBreaches30d: 1 }
+
+  - key: subscriber-single-view
+    name: Subscriber Single View
+    domainKey: subscriber
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: One subscriber across lines, accounts and households, with contract state and consent.
+    persona: Retention Marketing Manager
+    decision: Which subscribers to approach before contract end, and through which channel
+    cadence: Weekly
+    workaround: Line-level exports deduplicated by phone number in a spreadsheet
+    consequence: A household with four lines gets four uncoordinated retention offers.
+    questions:
+      - Which households hold more than one line with us?
+      - Which subscribers reach contract end within 60 days?
+      - Which of those hold consent for outbound contact?
+    sources:
+      - { name: Subscriber master, system: CRM }
+      - { name: Contract register, system: BSS }
+    entities:
+      - name: Subscriber
+        key: subscriber_id
+        attributes: [subscriber_id, household_id, msisdn*, name*, consent_marketing, tenure_months]
+      - name: Contract
+        key: contract_id
+        attributes: [contract_id, subscriber_id, plan_code, start_date, end_date, status]
+    metrics:
+      - { name: multi_line_households, label: Multi-line households, definition: Households holding more than one active line., grain: household }
+      - { name: contract_end_within_60_days, label: Contract ends within 60 days, definition: Contracts reaching end of term inside 60 days., grain: contract }
+      - { name: contactable_subscriber_share, label: Contactable subscriber share, definition: Share of subscribers with valid outbound contact consent., grain: subscriber }
+    controls: [consent-marketing, cdr-privacy, number-portability, retention-usage]
+    patterns: [certified-dashboard, operational-activation, self-serve-exploration]
+    freshness: Daily by 06:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 490
+    platformProfileKey: lakehouse
+    value:
+      statement: Coordinate household retention offers instead of contacting each line separately
+      baseline: 0
+      unit: households with a single coordinated offer
+      expectedChange: 140000
+      method: Campaign audience construction audit
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 32, queries30d: 710, sessions30d: 250, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: service-assurance-incidents
+    name: Service Assurance Incidents
+    domainKey: service-assurance
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Network incidents from detection to restoration, with customer impact attached.
+    persona: Network Operations Manager
+    decision: Which recurring fault type to engineer out next
+    cadence: Weekly
+    workaround: Incident tickets counted by type with customer impact estimated afterwards
+    consequence: Engineering effort goes to the loudest incident rather than the most impactful.
+    questions:
+      - Which fault types affect most subscriber minutes?
+      - How long does detection take relative to customer reporting?
+      - Which sites generate repeat incidents within 30 days?
+    sources:
+      - { name: Network incidents, system: OSS }
+      - { name: Subscriber site mapping, system: Inventory }
+    entities:
+      - name: NetworkIncident
+        key: incident_id
+        attributes: [incident_id, site_id, fault_type, detected_at, restored_at, detection_source]
+      - name: Site
+        key: site_id
+        attributes: [site_id, region, technology, subscribers_served_count]
+    metrics:
+      - { name: subscriber_minutes_lost, label: Subscriber minutes lost, definition: Subscribers affected multiplied by outage duration., grain: incident }
+      - { name: proactive_detection_share, label: Proactive detection share, definition: Share of incidents detected before a customer reported them., grain: incident }
+      - { name: repeat_site_incidents, label: Repeat site incidents, definition: Sites with more than one incident inside 30 days., grain: site }
+    controls: [reg-qos-reporting, location-data, retention-usage, residency]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Hourly
+    qualityScore: 93
+    costToServeUsdPerMonth: 740
+    platformProfileKey: lakehouse
+    value:
+      statement: Detect 80% of incidents before a customer reports them
+      baseline: 46
+      unit: percent proactively detected
+      expectedChange: 34
+      method: Incident detection source coding, monthly
+      date: '2027-03-31'
+      realised: true
+      measured: 78
+    telemetry: { consumers: 38, queries30d: 980, sessions30d: 330, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: billing-dispute-analysis
+    name: Billing Dispute Analysis
+    domainKey: billing-revenue
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Disputed charges by cause, with credit issued and the rating rule that produced the charge.
+    persona: Billing Operations Manager
+    decision: Which rating rule to correct to stop a recurring dispute
+    cadence: Weekly
+    workaround: Dispute tickets read individually and causes noted by an analyst
+    consequence: The same rating error is credited thousands of times instead of being fixed once.
+    questions:
+      - Which charge types are disputed most often?
+      - How much credit was issued for each dispute cause last month?
+      - Which rating rules produce the most disputed charges?
+    sources:
+      - { name: Dispute tickets, system: Care platform }
+      - { name: Rated charges, system: Billing }
+    entities:
+      - name: BillingDispute
+        key: dispute_id
+        attributes: [dispute_id, subscriber_id, charge_type, raised_at, credit_amount, cause_code]
+      - name: RatedCharge
+        key: rated_charge_id
+        attributes: [rated_charge_id, subscriber_id, rating_rule, amount, billed_at]
+    metrics:
+      - { name: dispute_rate_by_charge_type, label: Dispute rate by charge type, definition: Disputes raised per thousand charges of a type., grain: charge type }
+      - { name: credit_issued_by_cause, label: Credit issued by cause, definition: Total credit value grouped by dispute cause., grain: cause }
+      - { name: disputes_per_rating_rule, label: Disputes per rating rule, definition: Disputed charges attributable to a single rating rule., grain: rating rule }
+    controls: [cdr-privacy, retention-usage, consent-marketing, reg-qos-reporting]
+    patterns: [certified-dashboard, self-serve-exploration, operational-activation]
+    freshness: Daily by 07:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 420
+    platformProfileKey: warehouse
+    value:
+      statement: Halve credit issued for rating errors by fixing the three worst rules
+      baseline: 2100000
+      unit: USD credit per year
+      expectedChange: -1050000
+      method: Credit ledger analysis by cause code, monthly
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 24, queries30d: 450, sessions30d: 160, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: sales-channel-performance
+    name: Sales Channel Performance
+    domainKey: sales-channel
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Acquisition volume, quality and early churn by channel, dealer and plan.
+    persona: Head of Sales Channels
+    decision: Which dealers to re-tier and which channel incentives to change
+    cadence: Monthly
+    workaround: Dealer volumes tracked for commission, churn tracked separately and never joined
+    consequence: Dealers are paid for acquisitions that churn inside 90 days.
+    questions:
+      - Which dealers acquire subscribers who churn within 90 days?
+      - How does acquisition quality vary by channel?
+      - Which plans are sold predominantly through the worst-performing channel?
+    sources:
+      - { name: Acquisition records, system: Sales system }
+      - { name: Churn events, system: BSS }
+    entities:
+      - name: Acquisition
+        key: acquisition_id
+        attributes: [acquisition_id, subscriber_id, dealer_id, channel, plan_code, acquired_at]
+      - name: Dealer
+        key: dealer_id
+        attributes: [dealer_id, dealer_name, region, tier, commission_scheme]
+    metrics:
+      - { name: early_churn_rate, label: Early churn rate, definition: Share of acquisitions churning within 90 days., grain: dealer }
+      - { name: acquisition_quality_index, label: Acquisition quality index, definition: Composite of early churn, payment default and plan fit., grain: channel }
+      - { name: commission_at_risk, label: Commission at risk, definition: Commission paid on acquisitions that churned early., grain: dealer }
+    controls: [consent-marketing, number-portability, retention-usage, cdr-privacy]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 08:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 360
+    platformProfileKey: warehouse
+    value:
+      statement: Claw back or prevent commission on acquisitions that churn inside 90 days
+      baseline: 3400000
+      unit: USD commission at risk per year
+      expectedChange: -2000000
+      method: Commission ledger reconciled to early churn, quarterly
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 17, queries30d: 270, sessions30d: 100, daysSinceLastUse: 4, freshnessBreaches30d: 1 }
+
+  - key: device-estate-and-upgrades
+    name: Device Estate & Upgrades
+    domainKey: devices
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: Which device each subscriber is on, its age, network compatibility and upgrade eligibility.
+    persona: Device Portfolio Manager
+    decision: Which device cohorts to prioritise for upgrade before a network technology retires
+    cadence: Monthly
+    workaround: Device inventory pulled from network logs and matched to accounts occasionally
+    consequence: A technology is switched off and thousands of subscribers lose service without warning.
+    questions:
+      - Which subscribers are on devices incompatible with the network we are keeping?
+      - Which device cohorts are past their expected replacement age?
+      - How many of those subscribers are eligible for an upgrade today?
+    sources:
+      - { name: Device inventory, system: Network inventory }
+      - { name: Upgrade eligibility, system: BSS }
+    entities:
+      - name: SubscriberDevice
+        key: subscriber_device_id
+        attributes: [subscriber_device_id, subscriber_id, device_model, imei*, first_seen_at, technology_support]
+      - name: UpgradeEligibility
+        key: eligibility_id
+        attributes: [eligibility_id, subscriber_id, eligible_from, offer_tier, taken_up]
+    metrics:
+      - { name: incompatible_device_count, label: Incompatible devices, definition: Devices unable to operate on the retained network technology., grain: device }
+      - { name: device_age_months, label: Device age, definition: Months since a device first appeared on the network., grain: device }
+      - { name: upgrade_eligible_untaken, label: Upgrade eligible, not taken, definition: Subscribers eligible for upgrade who have not taken one., grain: subscriber }
+    controls: [cdr-privacy, location-data, retention-usage, residency]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Weekly, Monday 07:00
+    qualityScore: 86
+    costToServeUsdPerMonth: 340
+    platformProfileKey: lakehouse
+    value:
+      statement: Migrate every incompatible device before the technology retires
+      baseline: 214000
+      unit: subscribers on incompatible devices
+      expectedChange: -214000
+      method: Network inventory compatibility report, monthly
+      date: '2027-08-31'
+      realised: false
+    telemetry: { consumers: 15, queries30d: 200, sessions30d: 75, daysSinceLastUse: 7, freshnessBreaches30d: 0 }

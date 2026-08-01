@@ -204,3 +204,230 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Reduce stock-outs attributable to late supplier delivery by a quarter, baseline: 1200, unit: stock-out days per month, expectedChange: -300, method: Stock-out counts attributed to delivery cause, date: '2027-02-28', realised: false }
     telemetry: { consumers: 14, queries30d: 210, sessions30d: 90, daysSinceLastUse: 4, freshnessBreaches30d: 2 }
+
+  - key: loyalty-member-value
+    name: Loyalty Member Value
+    domainKey: customer-loyalty
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Member spend, frequency and category mix with marketing consent state carried alongside.
+    persona: Loyalty Programme Manager
+    decision: Which member segments to target with the next campaign, and which to leave alone
+    cadence: Weekly
+    workaround: Segment lists exported from the loyalty platform and joined to sales by hand
+    consequence: Campaigns go to members who have withdrawn consent, or to members already loyal.
+    questions:
+      - Which member segments have declining visit frequency?
+      - Which high-value members hold marketing consent?
+      - Which categories does each segment buy that others do not?
+    sources:
+      - { name: Loyalty transactions, system: Loyalty platform }
+      - { name: Consent register, system: CDP }
+    entities:
+      - name: LoyaltyMember
+        key: member_id
+        attributes: [member_id, customer_name*, contact_email*, join_date, tier, consent_marketing]
+      - name: MemberTransaction
+        key: member_transaction_id
+        attributes: [member_transaction_id, member_id, store_id, basket_value, category_mix, transacted_at]
+    metrics:
+      - { name: member_visit_frequency, label: Member visit frequency, definition: Average visits per member per period., grain: member }
+      - { name: consented_high_value_members, label: Consented high-value members, definition: Top-decile members holding valid marketing consent., grain: member }
+      - { name: category_penetration_by_segment, label: Category penetration by segment, definition: Share of a segment buying into a category., grain: segment }
+    controls: [consent-marketing, pii-minimisation, retention-transaction, residency]
+    patterns: [certified-dashboard, self-serve-exploration, ml-feature]
+    freshness: Daily by 06:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 450
+    platformProfileKey: lakehouse
+    value:
+      statement: Stop contacting members without consent, and lift campaign response
+      baseline: 2.1
+      unit: percent campaign response
+      expectedChange: 1.4
+      method: Campaign response tracking against consented audiences
+      date: '2027-04-30'
+      realised: true
+      measured: 3.4
+    telemetry: { consumers: 30, queries30d: 620, sessions30d: 210, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: supplier-lead-time-reliability
+    name: Supplier Lead Time Reliability
+    domainKey: supply-chain
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Promised versus actual lead time by supplier and lane, with the variability that drives safety stock.
+    persona: Supply Chain Planner
+    decision: Which suppliers to re-tier and where to hold more safety stock
+    cadence: Weekly
+    workaround: Purchase order receipts compared to promise dates in a planner's spreadsheet
+    consequence: Safety stock is set on an average that hides a supplier who is late one week in four.
+    questions:
+      - Which suppliers have the widest lead time variability?
+      - Which lanes most often miss their promised date?
+      - How much safety stock is held because of lead time variability alone?
+    sources:
+      - { name: Purchase orders, system: ERP }
+      - { name: Goods receipts, system: WMS }
+    entities:
+      - name: PurchaseOrder
+        key: purchase_order_id
+        attributes: [purchase_order_id, supplier_id, lane, promised_date, ordered_quantity]
+      - name: GoodsReceipt
+        key: goods_receipt_id
+        attributes: [goods_receipt_id, purchase_order_id, received_at, received_quantity]
+    metrics:
+      - { name: lead_time_variability, label: Lead time variability, definition: Standard deviation of actual lead time by supplier., grain: supplier }
+      - { name: promise_date_miss_rate, label: Promise date miss rate, definition: Share of orders received after the promised date., grain: lane }
+      - { name: variability_driven_safety_stock, label: Variability-driven safety stock, definition: Safety stock value attributable to lead time variability., grain: material }
+    controls: [supplier-terms-confidentiality, retention-transaction, price-accuracy, residency]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 05:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 400
+    platformProfileKey: warehouse
+    value:
+      statement: Release working capital by re-tiering the least reliable suppliers
+      baseline: 8400000
+      unit: USD safety stock held
+      expectedChange: -1900000
+      method: Inventory valuation against reliability tiers, quarterly
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 21, queries30d: 340, sessions30d: 125, daysSinceLastUse: 2, freshnessBreaches30d: 1 }
+
+  - key: store-inventory-position
+    name: Store Inventory Position
+    domainKey: inventory
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: Stock on hand by store and line, with shrink, count variance and negative-stock exceptions.
+    persona: Store Operations Manager
+    decision: Which stores to send a count team to this week
+    cadence: Weekly
+    workaround: Exception reports run per store and read individually by area managers
+    consequence: A line shows as available online, the customer orders it, and the store cannot fulfil.
+    questions:
+      - Which stores have the most lines showing negative stock?
+      - Which categories show the highest shrink?
+      - Where does system stock diverge most from the last count?
+    sources:
+      - { name: Store stock ledger, system: Retail ERP }
+      - { name: Count results, system: Store systems }
+    entities:
+      - name: StoreStock
+        key: store_stock_id
+        attributes: [store_stock_id, store_id, sku, on_hand_quantity, last_counted_at, counted_quantity]
+      - name: ShrinkEvent
+        key: shrink_event_id
+        attributes: [shrink_event_id, store_id, sku, shrink_type, quantity, recorded_at]
+    metrics:
+      - { name: negative_stock_lines, label: Negative stock lines, definition: SKU and store combinations showing negative on-hand quantity., grain: store }
+      - { name: shrink_rate_by_category, label: Shrink rate by category, definition: Shrink value as a share of sales by category., grain: category }
+      - { name: count_divergence_value, label: Count divergence value, definition: Value of the gap between system and counted stock., grain: store }
+    controls: [retention-transaction, price-accuracy, allergen-accuracy, age-restricted]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Daily by 04:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 520
+    platformProfileKey: lakehouse
+    value:
+      statement: Cut online orders cancelled for store stock error by two thirds
+      baseline: 9.2
+      unit: percent of store-fulfilled orders cancelled
+      expectedChange: -6
+      method: Order cancellation reason coding, monthly
+      date: '2027-03-31'
+      realised: true
+      measured: 3.1
+    telemetry: { consumers: 35, queries30d: 780, sessions30d: 270, daysSinceLastUse: 1, freshnessBreaches30d: 2 }
+
+  - key: ecommerce-journey-conversion
+    name: eCommerce Journey Conversion
+    domainKey: ecommerce
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Session to order conversion by device, journey step and fulfilment promise shown.
+    persona: Head of Digital Trading
+    decision: Which journey step or fulfilment promise to change next
+    cadence: Weekly
+    workaround: Web analytics read separately from order data with no shared definition of a session
+    consequence: Conversion is optimised for the step that is measured, not the step that loses the sale.
+    questions:
+      - At which journey step do sessions abandon most?
+      - How does conversion vary by the delivery promise shown?
+      - Which devices convert worst relative to their traffic share?
+    sources:
+      - { name: Web session events, system: Web analytics }
+      - { name: Order records, system: Order management }
+    entities:
+      - name: WebSession
+        key: session_id
+        attributes: [session_id, member_id, device_type, started_at, last_step, converted]
+      - name: OnlineOrder
+        key: online_order_id
+        attributes: [online_order_id, session_id, order_value, promise_shown, placed_at]
+    metrics:
+      - { name: step_abandonment_rate, label: Step abandonment rate, definition: Share of sessions abandoning at each journey step., grain: step }
+      - { name: conversion_by_promise, label: Conversion by delivery promise, definition: Session conversion rate grouped by delivery promise shown., grain: promise }
+      - { name: device_conversion_gap, label: Device conversion gap, definition: Difference between a device's traffic share and its order share., grain: device }
+    controls: [consent-marketing, pii-minimisation, price-accuracy, retention-transaction]
+    patterns: [certified-dashboard, self-serve-exploration, ml-feature]
+    freshness: Hourly
+    qualityScore: 91
+    costToServeUsdPerMonth: 680
+    platformProfileKey: lakehouse
+    value:
+      statement: Lift session-to-order conversion from 2.8% to 3.4%
+      baseline: 2.8
+      unit: percent conversion
+      expectedChange: 0.6
+      method: Weekly trading review conversion reporting
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 27, queries30d: 690, sessions30d: 240, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: promotional-margin-impact
+    name: Promotional Margin Impact
+    domainKey: finance-margin
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Promotion cost, incremental volume and margin effect, with supplier funding netted off.
+    persona: Trading Finance Manager
+    decision: Which promotional mechanics to repeat and which to stop
+    cadence: Monthly
+    workaround: Promotion performance assembled per campaign in a finance workbook after the event
+    consequence: A mechanic that loses money is repeated because it moved volume.
+    questions:
+      - Which promotional mechanics destroyed margin after supplier funding?
+      - How much promotional volume was genuinely incremental?
+      - Which categories are most dependent on promotion to hit sales?
+    sources:
+      - { name: Promotion plan and mechanics, system: Trade planning }
+      - { name: Sales and margin actuals, system: Finance }
+    entities:
+      - name: Promotion
+        key: promotion_id
+        attributes: [promotion_id, mechanic_type, category, start_date, end_date, supplier_funding]
+      - name: PromotionSales
+        key: promotion_sales_id
+        attributes: [promotion_sales_id, promotion_id, sku, units_sold, margin_amount]
+    metrics:
+      - { name: net_promotional_margin, label: Net promotional margin, definition: Margin after promotion cost and supplier funding., grain: promotion }
+      - { name: incremental_volume_share, label: Incremental volume share, definition: Share of promoted volume above baseline demand., grain: promotion }
+      - { name: promotion_dependency, label: Promotion dependency, definition: Share of category sales made on promotion., grain: category }
+    controls: [supplier-terms-confidentiality, price-accuracy, retention-transaction, residency]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Weekly, Tuesday 08:00
+    qualityScore: 87
+    costToServeUsdPerMonth: 440
+    platformProfileKey: warehouse
+    value:
+      statement: Stop repeating promotional mechanics that destroy margin
+      baseline: 0
+      unit: mechanics withdrawn on margin evidence
+      expectedChange: 9
+      method: Trade plan review decisions citing this product
+      date: '2027-07-31'
+      realised: false
+    telemetry: { consumers: 18, queries30d: 260, sessions30d: 95, daysSinceLastUse: 5, freshnessBreaches30d: 0 }

@@ -48,10 +48,10 @@ pnpm dev         # http://localhost:3000
 `pnpm install` creates `.env` from `.env.example` if you do not already have one, so there is no
 configuration step before the seed. `.env` is git-ignored and stays on your machine.
 
-`pnpm db:seed` takes roughly 30–60 seconds. It is not writing fixture rows: it drives all 27 demo
+`pnpm db:seed` takes roughly 90 seconds to two minutes. It is not writing fixture rows: it drives all 73 demo
 products through the **real** transition engine, the same `requestTransition()` and
-`recordDecision()` calls the UI makes. When it finishes you have 9 workspaces, 27 published
-products, 324 approved gates, ~675 artifact versions and ~2,350 audit events.
+`recordDecision()` calls the UI makes. When it finishes you have 9 workspaces, 73 published
+products, 876 approved gates, ~1,825 artifact versions and ~6,350 audit events.
 
 ### Signing in
 

@@ -71,8 +71,8 @@ only user of. Replace it before anyone else can reach the instance:
 pnpm db:seed     # creates prisma/dev.db, then seeds it
 ```
 
-This takes roughly 30–60 seconds, and it is not writing fixture rows. It drives all
-27 demo products through the **real** transition engine — the same
+This takes roughly 90 seconds to two minutes, and it is not writing fixture rows. It drives all
+73 demo products through the **real** transition engine — the same
 `requestTransition()` and `recordDecision()` calls the UI makes. If the engine is
 broken, the seed fails rather than producing plausible-looking data.
 
@@ -81,11 +81,11 @@ Expected output ends with a summary like:
 ```
 Seed complete: {
   workspaces: 9,
-  products: 27,
-  published: 27,
-  gatesApproved: 324,
-  artifactVersions: 675,
-  auditEvents: 2349,
+  products: 73,
+  published: 73,
+  gatesApproved: 876,
+  artifactVersions: 1825,
+  auditEvents: 6351,
   requests: 3
 }
 
@@ -101,7 +101,8 @@ pnpm dev
 Open **<http://localhost:3000>**.
 
 Unlike most demos, the first screen is not empty: you land on a cross-industry
-marketplace of 27 certified, published products across nine industry packs.
+marketplace of 73 certified, published products across nine industry packs — every industry and
+domain combination the packs declare has at least one.
 
 ---
 

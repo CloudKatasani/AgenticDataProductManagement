@@ -16,7 +16,7 @@ consumption and retirement.
 
 ```bash
 pnpm install          # installs dependencies, creates .env, generates the Prisma client
-pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 27 certified products
+pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 73 certified products
 pnpm dev              # http://localhost:3000
 ```
 
@@ -58,8 +58,9 @@ makes no network call at all.
 fails. It produces:
 
 - 9 workspaces, one per industry pack, with one user per role in each
-- 27 data products, each certified and published through all 12 gates (324 approved gates)
-- ~675 content-hashed artifact versions and ~2,350 append-only audit events
+- 73 data products, each certified and published through all 12 gates (876 approved gates) —
+  every industry and domain combination the packs declare has at least one
+- ~1,825 content-hashed artifact versions and ~6,350 append-only audit events
 - A cross-industry marketplace, an intake queue with a breached triage target, a declined request
   with its reason visible to the requester, and an open change request
 

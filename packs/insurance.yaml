@@ -202,3 +202,230 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Increase pre-settlement referral rate from 40% to 70% of eventual fraud findings, baseline: 40, unit: percent referred before settlement, expectedChange: 30, method: Retrospective review of confirmed fraud cases, date: '2027-04-30', realised: false }
     telemetry: { consumers: 5, queries30d: 40, sessions30d: 18, daysSinceLastUse: 95, freshnessBreaches30d: 2 }
+
+  - key: policyholder-single-view
+    name: Policyholder Single View
+    domainKey: customer-policyholder
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Every policy, claim and contact a household holds, resolved across product lines.
+    persona: Customer Retention Manager
+    decision: Which households to contact before renewal to prevent a multi-policy lapse
+    cadence: Weekly
+    workaround: Policy lists exported per product line and matched on address by hand
+    consequence: A household lapses three policies and nobody sees it was one relationship.
+    questions:
+      - Which households hold policies across more than one product line?
+      - Which of those have a renewal within 45 days?
+      - Which households made a claim and then lapsed within six months?
+    sources:
+      - { name: Policy master, system: Policy administration }
+      - { name: Household resolution, system: MDM }
+    entities:
+      - name: Household
+        key: household_id
+        attributes: [household_id, primary_name*, address*, contact_email*, tenure_years]
+      - name: Policy
+        key: policy_id
+        attributes: [policy_id, household_id, product_line, inception_date, renewal_date, status]
+    metrics:
+      - { name: multi_policy_households, label: Multi-policy households, definition: Households holding policies in more than one product line., grain: household }
+      - { name: renewal_within_45_days, label: Renewals within 45 days, definition: Policies with a renewal date inside 45 days., grain: policy }
+      - { name: post_claim_lapse_rate, label: Post-claim lapse rate, definition: Share of claimants lapsing within six months of settlement., grain: household }
+    controls: [pii-minimisation, retention-policy-records, fair-pricing, residency]
+    patterns: [certified-dashboard, operational-activation, self-serve-exploration]
+    freshness: Daily by 07:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 470
+    platformProfileKey: warehouse
+    value:
+      statement: Cut multi-policy household lapse from 11% to 7%
+      baseline: 11
+      unit: percent lapsed
+      expectedChange: -4
+      method: Renewal cohort tracking, quarterly
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 29, queries30d: 560, sessions30d: 190, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: underwriting-decision-quality
+    name: Underwriting Decision Quality
+    domainKey: underwriting
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Quote-to-bind outcomes against subsequent loss experience, by rating factor and referral path.
+    persona: Chief Underwriting Officer
+    decision: Which rating factors to recalibrate at the next pricing review
+    cadence: Quarterly
+    workaround: Pricing actuaries rebuild the comparison each review from raw extracts
+    consequence: Rating factors persist for years after they stopped predicting loss.
+    questions:
+      - Which rating factors show the weakest relationship to realised loss?
+      - What share of referred risks were bound and how did they perform?
+      - Which segments are declined most often relative to their loss experience?
+    sources:
+      - { name: Quote and bind records, system: Underwriting workbench }
+      - { name: Claims experience, system: Claims platform }
+    entities:
+      - name: Quote
+        key: quote_id
+        attributes: [quote_id, household_id, product_line, rating_factors, decision, quoted_at]
+      - name: Referral
+        key: referral_id
+        attributes: [referral_id, quote_id, referral_reason, underwriter_id, outcome]
+    metrics:
+      - { name: rating_factor_lift, label: Rating factor lift, definition: Predictive lift of a rating factor against realised loss., grain: rating factor }
+      - { name: referral_bind_rate, label: Referral bind rate, definition: Share of referred quotes that were bound., grain: referral }
+      - { name: decline_to_loss_ratio, label: Decline to loss ratio, definition: Decline rate of a segment relative to its realised loss ratio., grain: segment }
+    controls: [fair-pricing, reserving-lineage, health-data, retention-policy-records]
+    patterns: [certified-dashboard, self-serve-exploration, ml-feature]
+    freshness: Monthly, by working day 5
+    qualityScore: 93
+    costToServeUsdPerMonth: 720
+    platformProfileKey: lakehouse
+    value:
+      statement: Retire rating factors with no measurable predictive lift
+      baseline: 0
+      unit: factors retired on evidence
+      expectedChange: 8
+      method: Pricing review board decisions citing this product
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 15, queries30d: 210, sessions30d: 80, daysSinceLastUse: 6, freshnessBreaches30d: 0 }
+
+  - key: policy-lifecycle-events
+    name: Policy Lifecycle Events
+    domainKey: policy-administration
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Mid-term adjustments, cancellations, renewals and reinstatements as an ordered event stream.
+    persona: Policy Operations Manager
+    decision: Which adjustment types to automate to remove manual handling
+    cadence: Monthly
+    workaround: Transaction counts pulled from the administration system and grouped in Excel
+    consequence: Operations staffing is set on last year's mix while the mix has moved.
+    questions:
+      - Which mid-term adjustment types are most frequent?
+      - How many adjustments require manual underwriting intervention?
+      - Which cancellations were reinstated within 30 days?
+    sources:
+      - { name: Policy transactions, system: Policy administration }
+      - { name: Manual work queue, system: Operations workflow }
+    entities:
+      - name: PolicyEvent
+        key: policy_event_id
+        attributes: [policy_event_id, policy_id, event_type, effective_date, channel, manual_touch]
+      - name: WorkQueueItem
+        key: queue_item_id
+        attributes: [queue_item_id, policy_event_id, assigned_to, opened_at, closed_at]
+    metrics:
+      - { name: adjustment_volume_by_type, label: Adjustment volume by type, definition: Count of mid-term adjustments grouped by adjustment type., grain: event type }
+      - { name: manual_touch_rate, label: Manual touch rate, definition: Share of policy events requiring human intervention., grain: policy event }
+      - { name: reinstatement_within_30_days, label: Reinstatements within 30 days, definition: Cancellations reinstated inside 30 days., grain: policy }
+    controls: [retention-policy-records, pii-minimisation, claims-fairness, residency]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 330
+    platformProfileKey: warehouse
+    value:
+      statement: Automate the three highest-volume manual adjustment types
+      baseline: 62
+      unit: percent of events with a manual touch
+      expectedChange: -30
+      method: Workflow system touch counts, monthly
+      date: '2027-03-31'
+      realised: true
+      measured: 34
+    telemetry: { consumers: 20, queries30d: 330, sessions30d: 120, daysSinceLastUse: 2, freshnessBreaches30d: 1 }
+
+  - key: reinsurance-recovery
+    name: Reinsurance Recovery
+    domainKey: reinsurance
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Ceded exposure and recoveries due, by treaty, with the claims that trigger them.
+    persona: Reinsurance Manager
+    decision: Which recoveries to pursue and which treaties to renegotiate at renewal
+    cadence: Monthly
+    workaround: Treaty terms held in documents and matched to claims by an analyst each month
+    consequence: Recoveries are left unclaimed past the treaty notification deadline.
+    questions:
+      - Which claims exceed a treaty attachment point but have no recovery raised?
+      - What recovery value is approaching its notification deadline?
+      - Which treaties returned least relative to premium ceded?
+    sources:
+      - { name: Treaty register, system: Reinsurance system }
+      - { name: Large loss claims, system: Claims platform }
+    entities:
+      - name: Treaty
+        key: treaty_id
+        attributes: [treaty_id, reinsurer, attachment_point, limit, period_start, period_end]
+      - name: CededClaim
+        key: ceded_claim_id
+        attributes: [ceded_claim_id, treaty_id, claim_id, gross_incurred, recovery_raised, notified_at]
+    metrics:
+      - { name: unraised_recovery_value, label: Unraised recovery value, definition: Recoverable value on claims above attachment with no recovery raised., grain: claim }
+      - { name: recovery_deadline_exposure, label: Recovery deadline exposure, definition: Recoverable value within 30 days of a notification deadline., grain: treaty }
+      - { name: treaty_return_ratio, label: Treaty return ratio, definition: Recoveries received divided by premium ceded., grain: treaty }
+    controls: [reserving-lineage, retention-policy-records, sanctions-screening, residency]
+    patterns: [certified-dashboard, bulk-extract]
+    freshness: Monthly, by working day 3
+    qualityScore: 94
+    costToServeUsdPerMonth: 610
+    platformProfileKey: warehouse
+    value:
+      statement: Eliminate recoveries lost to missed notification deadlines
+      baseline: 1400000
+      unit: USD lost per year
+      expectedChange: -1400000
+      method: Treaty deadline exception report, monthly
+      date: '2027-02-28'
+      realised: true
+      measured: 0
+    telemetry: { consumers: 9, queries30d: 120, sessions30d: 45, daysSinceLastUse: 7, freshnessBreaches30d: 0 }
+
+  - key: distribution-and-broker-performance
+    name: Distribution & Broker Performance
+    domainKey: distribution
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Volume, loss ratio and persistency by broker and agency, with commission alongside.
+    persona: Head of Distribution
+    decision: Which broker agreements to renew, reprice or terminate
+    cadence: Quarterly
+    workaround: Broker statements and loss data reconciled manually at renewal time
+    consequence: Volume-based commission is paid to brokers whose book loses money.
+    questions:
+      - Which brokers write business with the worst loss ratio?
+      - How does persistency vary by distribution channel?
+      - Which brokers earn most commission per pound of retained margin?
+    sources:
+      - { name: Broker submissions, system: Broker portal }
+      - { name: Commission ledger, system: Finance }
+    entities:
+      - name: Broker
+        key: broker_id
+        attributes: [broker_id, agency_name, region, agreement_start, tier]
+      - name: BrokerPolicy
+        key: broker_policy_id
+        attributes: [broker_policy_id, broker_id, policy_id, commission_rate, written_premium]
+    metrics:
+      - { name: broker_loss_ratio, label: Broker loss ratio, definition: Incurred loss divided by earned premium for a broker's book., grain: broker }
+      - { name: channel_persistency, label: Channel persistency, definition: Share of policies renewing by distribution channel., grain: channel }
+      - { name: commission_per_retained_margin, label: Commission per retained margin, definition: Commission paid per unit of margin retained after loss., grain: broker }
+    controls: [fair-pricing, retention-policy-records, sanctions-screening, pii-minimisation]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Monthly, by working day 7
+    qualityScore: 87
+    costToServeUsdPerMonth: 390
+    platformProfileKey: lakehouse
+    value:
+      statement: Reprice or exit the worst-performing decile of broker agreements
+      baseline: 0
+      unit: agreements reviewed on loss evidence
+      expectedChange: 24
+      method: Distribution review minutes citing this product
+      date: '2027-07-31'
+      realised: false
+    telemetry: { consumers: 14, queries30d: 190, sessions30d: 70, daysSinceLastUse: 10, freshnessBreaches30d: 1 }

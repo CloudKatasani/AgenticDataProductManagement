@@ -202,3 +202,230 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: End the monthly reconciliation between finance and product balance figures, baseline: 12, unit: hours per month spent reconciling, expectedChange: -12, method: Time recorded by both teams, date: '2026-11-30', realised: true, measured: 0.5 }
     telemetry: { consumers: 52, queries30d: 1100, sessions30d: 420, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: onboarding-funnel
+    name: Onboarding Funnel
+    domainKey: customer-onboarding
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Every step from application to first funded transaction, with drop-off and KYC hold reasons.
+    persona: Head of Retail Onboarding
+    decision: Which onboarding step to redesign next quarter
+    cadence: Weekly
+    workaround: Funnel counts pulled separately from four systems and reconciled by hand
+    consequence: Effort goes to the step that is loudest rather than the step that loses most applicants.
+    questions:
+      - At which step do applications drop off most often?
+      - How long do applications sit in a KYC hold before a decision?
+      - Which channels produce applications that never fund?
+    sources:
+      - { name: Application events, system: Origination platform }
+      - { name: KYC case outcomes, system: KYC workflow }
+    entities:
+      - name: Application
+        key: application_id
+        attributes: [application_id, customer_id, channel, submitted_at, current_step, outcome]
+      - name: KycCase
+        key: kyc_case_id
+        attributes: [kyc_case_id, application_id, opened_at, hold_reason, decided_at]
+    metrics:
+      - { name: onboarding_step_dropoff, label: Onboarding step drop-off, definition: Share of applications abandoning at each step., grain: step }
+      - { name: kyc_hold_duration_hours, label: KYC hold duration, definition: Hours an application waits in a KYC hold before decision., grain: application }
+      - { name: unfunded_account_rate, label: Unfunded account rate, definition: Share of opened accounts with no funding transaction in 30 days., grain: account }
+    controls: [kyc-refresh, sanctions-screening, pii-minimisation, retention-financial]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Daily by 07:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 420
+    platformProfileKey: warehouse
+    value:
+      statement: Lift application-to-funded conversion from 52% to 62%
+      baseline: 52
+      unit: percent converted
+      expectedChange: 10
+      method: Funnel cohort comparison quarter on quarter
+      date: '2027-03-31'
+      realised: false
+    telemetry: { consumers: 26, queries30d: 520, sessions30d: 180, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: payment-flow-health
+    name: Payment Flow Health
+    domainKey: payments
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Payment instructions end to end, with failure reasons, repair effort and settlement timing.
+    persona: Payments Operations Manager
+    decision: Which failure reason to engineer out of the payment rail next
+    cadence: Daily
+    workaround: Rejection reports read by an operator each morning and tallied manually
+    consequence: The same repairable failure is fixed by hand thousands of times a month.
+    questions:
+      - Which payment failure reasons are most frequent this week?
+      - How many failures were repaired manually rather than automatically?
+      - Which corridors miss their settlement window most often?
+    sources:
+      - { name: Payment instructions, system: Payments hub }
+      - { name: Settlement confirmations, system: Scheme gateway }
+    entities:
+      - name: PaymentInstruction
+        key: payment_id
+        attributes: [payment_id, account_id, corridor, amount, submitted_at, status, failure_reason]
+      - name: SettlementEvent
+        key: settlement_id
+        attributes: [settlement_id, payment_id, settled_at, scheme]
+    metrics:
+      - { name: payment_failure_rate, label: Payment failure rate, definition: Share of instructions failing at first submission., grain: payment }
+      - { name: manual_repair_volume, label: Manual repair volume, definition: Failed payments repaired by an operator rather than automatically., grain: payment }
+      - { name: settlement_window_breaches, label: Settlement window breaches, definition: Payments settling outside their scheme window., grain: payment }
+    controls: [aml-monitoring, sanctions-screening, retention-financial, bcbs-lineage]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Hourly
+    qualityScore: 93
+    costToServeUsdPerMonth: 780
+    platformProfileKey: warehouse
+    value:
+      statement: Halve manual payment repair effort
+      baseline: 1900
+      unit: manual repairs per month
+      expectedChange: -950
+      method: Operations time recording against repair queues
+      date: '2027-01-31'
+      realised: true
+      measured: 880
+    telemetry: { consumers: 33, queries30d: 970, sessions30d: 320, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: card-portfolio-performance
+    name: Card Portfolio Performance
+    domainKey: cards
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Spend, revolve behaviour, interchange and delinquency by card product and cohort.
+    persona: Cards Product Manager
+    decision: Which card product to reprice or withdraw at the next portfolio review
+    cadence: Monthly
+    workaround: Finance and risk each produce a view and the two do not reconcile
+    consequence: Products are repriced on spend volume without seeing the delinquency that follows.
+    questions:
+      - Which card products carry the highest revolving balance per active account?
+      - How does delinquency develop by origination cohort?
+      - Which products earn least interchange per pound of spend?
+    sources:
+      - { name: Card transactions, system: Card processor }
+      - { name: Account balances, system: Core banking }
+    entities:
+      - name: CardAccount
+        key: card_account_id
+        attributes: [card_account_id, customer_id, product_code, opened_at, credit_limit, delinquency_bucket]
+      - name: CardTransaction
+        key: card_transaction_id
+        attributes: [card_transaction_id, card_account_id, posted_at, amount, merchant_category]
+    metrics:
+      - { name: revolving_balance_per_account, label: Revolving balance per account, definition: Average interest-bearing balance per active card account., grain: card account }
+      - { name: cohort_delinquency_curve, label: Cohort delinquency, definition: Share of a origination cohort in each delinquency bucket by months on book., grain: cohort }
+      - { name: interchange_yield, label: Interchange yield, definition: Interchange earned per unit of card spend., grain: product }
+    controls: [credit-decision-explainability, retention-financial, pii-minimisation, bcbs-lineage]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Daily by 06:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 560
+    platformProfileKey: warehouse
+    value:
+      statement: Base portfolio repricing on measured cohort delinquency rather than spend alone
+      baseline: 0
+      unit: products repriced on cohort evidence
+      expectedChange: 5
+      method: Portfolio review minutes referencing this product
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 17, queries30d: 260, sessions30d: 95, daysSinceLastUse: 5, freshnessBreaches30d: 0 }
+
+  - key: capital-risk-exposure
+    name: Capital & Risk Exposure
+    domainKey: risk-capital
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Risk-weighted assets and concentration exposure with the lineage a regulator will ask for.
+    persona: Head of Risk Reporting
+    decision: Which exposures to hedge or reduce before the next capital submission
+    cadence: Monthly
+    workaround: A submission workbook rebuilt each cycle with lineage held in one analyst's head
+    consequence: A regulator asks how a number was derived and the answer takes three weeks.
+    questions:
+      - Which counterparty concentrations exceed appetite this month?
+      - How has risk-weighted asset density moved by portfolio?
+      - Which figures in the last submission cannot be traced to source?
+    sources:
+      - { name: Exposure positions, system: Risk engine }
+      - { name: Counterparty master, system: Reference data }
+    entities:
+      - name: Exposure
+        key: exposure_id
+        attributes: [exposure_id, counterparty_id, portfolio, exposure_value, risk_weight, as_of_date]
+      - name: Counterparty
+        key: counterparty_id
+        attributes: [counterparty_id, legal_name, sector, country, rating]
+    metrics:
+      - { name: risk_weighted_assets, label: Risk-weighted assets, definition: Exposure value multiplied by applicable risk weight., grain: portfolio }
+      - { name: counterparty_concentration, label: Counterparty concentration, definition: Share of total exposure held against a single counterparty group., grain: counterparty }
+      - { name: untraceable_submission_lines, label: Untraceable submission lines, definition: Reported figures with no resolving lineage to a source system., grain: submission line }
+    controls: [bcbs-lineage, retention-financial, residency, credit-decision-explainability]
+    patterns: [certified-dashboard, bulk-extract]
+    freshness: Monthly, by working day 3
+    qualityScore: 95
+    costToServeUsdPerMonth: 910
+    platformProfileKey: on-prem
+    value:
+      statement: Answer a regulator's lineage question within one working day
+      baseline: 15
+      unit: working days to answer
+      expectedChange: -14
+      method: Timed response to internal lineage challenge exercises
+      date: '2027-02-28'
+      realised: true
+      measured: 1
+    telemetry: { consumers: 14, queries30d: 180, sessions30d: 60, daysSinceLastUse: 6, freshnessBreaches30d: 0 }
+
+  - key: branch-and-channel-demand
+    name: Branch & Channel Demand
+    domainKey: branch-channel
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Where customers actually transact, by channel, journey and time of day.
+    persona: Head of Distribution
+    decision: Which branches to reduce hours at, and which journeys to move to digital first
+    cadence: Monthly
+    workaround: Branch footfall counted locally and merged with digital analytics quarterly
+    consequence: Branches close where digital adoption is lowest and vulnerable customers lose access.
+    questions:
+      - Which journeys still complete predominantly in branch?
+      - Which branches serve customers with no digital alternative in use?
+      - How does channel mix vary by time of day and day of week?
+    sources:
+      - { name: Branch interactions, system: Branch teller }
+      - { name: Digital sessions, system: Web and mobile analytics }
+    entities:
+      - name: ChannelInteraction
+        key: interaction_id
+        attributes: [interaction_id, customer_id, channel, journey_code, started_at, completed]
+      - name: Branch
+        key: branch_id
+        attributes: [branch_id, location_name, opening_hours, staff_count]
+    metrics:
+      - { name: branch_only_journey_share, label: Branch-only journey share, definition: Share of journeys completed exclusively in branch., grain: journey }
+      - { name: digitally_inactive_customers, label: Digitally inactive customers, definition: Customers with branch activity and no digital session in 12 months., grain: customer }
+      - { name: channel_mix_by_hour, label: Channel mix by hour, definition: Distribution of interactions across channels by hour of day., grain: hour }
+    controls: [pii-minimisation, retention-financial, residency, aml-monitoring]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Weekly, Monday 08:00
+    qualityScore: 86
+    costToServeUsdPerMonth: 340
+    platformProfileKey: warehouse
+    value:
+      statement: Make every branch hours decision cite digital-alternative evidence
+      baseline: 0
+      unit: decisions with access evidence
+      expectedChange: 12
+      method: Distribution committee decision log
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 11, queries30d: 140, sessions30d: 55, daysSinceLastUse: 12, freshnessBreaches30d: 1 }
