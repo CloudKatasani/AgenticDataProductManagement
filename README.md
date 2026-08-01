@@ -77,6 +77,18 @@ Every stage carries the same furniture: a "why this stage matters" panel, a live
 checklist, an agent panel, a review thread anchored to fields, version diff, parking lot, gate
 panel and audit timeline.
 
+Two stages add an import surface, because the web form is the wrong tool for that job:
+
+- **Stage 3** profiles an uploaded **CSV extract** — row counts, null rates, cardinality, ranges and
+  patterns are computed locally. No core flow anywhere in the application requires a warehouse
+  connection. Sample values are withheld unless explicitly requested.
+- **Stage 5** round-trips the **attribute register through Excel**, because nobody reviews 200
+  attributes in a browser.
+
+**Guided tours drive the real UI.** Starting a tour from the Academy pins a persistent overlay that
+navigates to each screen it describes and survives the navigation. It is not a slideshow, which
+would go stale the first time the product changed and nobody would notice.
+
 ---
 
 ## The invariants, and where they are enforced
@@ -176,7 +188,10 @@ compliance certification. The UI says so on every pack screen.
 
 - **Word** — evidence pack (every artifact version, approval, provenance summary), maturity assessment
 - **Excel** — attribute register (colour-coded inputs, dropdown validation, locked reference sheet,
-  COUNTIFS review summary, parking-lot tab), portfolio extract
+  COUNTIFS review summary, parking-lot tab) and portfolio extract. The attribute workbook is a true
+  **round trip**: export it, review it in Excel, import it back from Stage 5. The edits become a new
+  artifact version and the reviewer's comments become review-thread comments anchored to the
+  attribute, so the review does not stay trapped in a file on somebody's laptop.
 - **YAML / JSON** — every stage artifact, marketplace listing, grounding pack, standards payloads
 - **Mermaid** — ER, lineage and portfolio dependency graphs, generated from committed artifacts
 - **PDF** — the printable "How data products work here" primer
@@ -229,17 +244,10 @@ than one that claims everything.
 
 ## Honest limitations in this build
 
-- **Guided tours are content, not a driven overlay.** The Academy ships the tour scripts and links
-  each step to the real screen; it does not yet drive the UI with a persistent overlay.
 - **Peer-band comparison in the maturity assessment is a placeholder.** No external benchmark data is
   bundled, and inventing one would be dishonest.
 - **The audit bundle is digest-sealed, not cryptographically signed** by an external key holder. The
   bundle says so in its own payload.
-- **Excel round-trip is export-plus-import-shape, not a full re-import flow.** The workbook is
-  generated with validation, review summary and parking lot; re-importing an edited workbook is not
-  wired into the commit path in this build.
-- **CSV upload for Stage 3 profiling is not wired to a file picker.** Profile statistics are entered
-  or committed as an artifact; the schema and criteria support either source.
 - **Scheduled L3 monitoring runs on demand**, from the Agents tab, rather than from a background
   scheduler.
 - **Standards adapters are tested against their pinned shapes**, not against a live specification —

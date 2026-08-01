@@ -8,6 +8,7 @@ import {
   roleGuides,
 } from '@/lib/guides/registry'
 import { STAGES } from '@/lib/lifecycle/stages'
+import { StartTourButton } from '@/components/tour'
 import { Badge, Card, CardBody, CardHeader, LinkButton, PageHeader } from '@/components/ui'
 
 export default function AcademyPage() {
@@ -66,6 +67,9 @@ export default function AcademyPage() {
                     <li className="text-xs text-ink-500">…and {tour.steps.length - 4} more steps.</li>
                   ) : null}
                 </ol>
+                <div className="mt-3">
+                  <StartTourButton tour={tour} />
+                </div>
               </CardBody>
             </Card>
           ))}

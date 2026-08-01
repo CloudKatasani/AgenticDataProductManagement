@@ -7,7 +7,7 @@ import { prisma } from '@/lib/db'
 import { requireSession } from '@/lib/auth/session'
 import { assertRole } from '@/lib/auth/authorise'
 import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
-import { ArtifactValidationError, commitArtifact } from '@/lib/artifacts/commit'
+import { ArtifactValidationError, commitArtifact, latestVersion } from '@/lib/artifacts/commit'
 import { getArtifactType } from '@/lib/artifacts/registry'
 import { recordDecision, requestTransition, TransitionError } from '@/lib/lifecycle/transitions'
 import {
@@ -18,11 +18,22 @@ import {
   AgentError,
 } from '@/lib/agents/runtime'
 import { decisionSchema } from '@/lib/domain/enums'
+import { PRACTITIONER_ROLES } from '@/lib/domain/roles'
+import { parseAttributeWorkbook, WorkbookImportError } from '@/lib/exports/xlsx'
+import { CsvError, mergeProfileDataset, profileCsv } from '@/lib/profiling/csv'
 
 export interface Result {
   ok?: string
   error?: string
   details?: string[]
+}
+
+/**
+ * Authoring an artifact is a mutation, so it is authorised by role server-side like every other
+ * one: you must hold a practitioner role in the workspace that owns the product.
+ */
+async function assertCanAuthor(userId: string, workspaceId: string, action: string) {
+  await assertRole(userId, workspaceId, PRACTITIONER_ROLES, action)
 }
 
 function refresh(productId: string, stageNumber?: number) {
@@ -40,6 +51,16 @@ export async function commitArtifactAction(_prev: Result | undefined, formData: 
   const applyProposals = String(formData.get('applyProposals') ?? '') === 'true'
 
   const type = getArtifactType(artifactType)
+  const owning = await prisma.dataProduct.findUniqueOrThrow({
+    where: { id: productId },
+    select: { workspaceId: true },
+  })
+  try {
+    await assertCanAuthor(session.userId, owning.workspaceId, `Committing ${type.title}`)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Not authorised.' }
+  }
+
   let content: unknown
   try {
     content = parseYaml(body)
@@ -439,4 +460,168 @@ export async function measureValueAction(_prev: Result | undefined, formData: Fo
   refresh(product.id, 12)
   revalidatePath('/portfolio')
   return { ok: 'Value measurement recorded against the Stage 2 hypothesis.' }
+}
+
+/**
+ * The other half of the Excel round trip. An edited workbook commits a new register version and
+ * carries the reviewer's outcomes back into the review thread, so the review does not stay trapped
+ * in a file on somebody's laptop.
+ */
+export async function importAttributeWorkbookAction(
+  _prev: Result | undefined,
+  formData: FormData,
+): Promise<Result> {
+  const session = await requireSession()
+  const productId = String(formData.get('productId') ?? '')
+  const file = formData.get('file')
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: 'Choose the edited workbook to import.' }
+  }
+
+  const product = await prisma.dataProduct.findUniqueOrThrow({
+    where: { id: productId },
+    select: { id: true, workspaceId: true },
+  })
+  try {
+    await assertCanAuthor(session.userId, product.workspaceId, 'Importing an attribute register')
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Not authorised.' }
+  }
+
+  let parsed
+  try {
+    parsed = await parseAttributeWorkbook(await file.arrayBuffer())
+  } catch (error) {
+    if (error instanceof WorkbookImportError) return { error: error.message, details: error.issues }
+    return { error: 'That file could not be read as an attribute register workbook.' }
+  }
+
+  try {
+    const result = await commitArtifact({
+      productId,
+      artifactType: 'attribute-register',
+      content: parsed.register,
+      userId: session.userId,
+      message: `Imported from workbook: ${parsed.approved} approved, ${parsed.changesRequested} changes requested`,
+    })
+
+    // Reviewer comments become real, anchored review comments rather than staying in the file.
+    const anchored = parsed.reviews.filter((review) => review.comment)
+    if (anchored.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const review of anchored) {
+          const index = parsed.register.attributes.findIndex(
+            (attribute) => attribute.name === review.attributeName,
+          )
+          const created = await tx.comment.create({
+            data: {
+              productId,
+              stageNumber: 5,
+              authorId: session.userId,
+              kind: review.outcome === 'CHANGES REQUESTED' ? 'REVIEW' : 'NOTE',
+              body: `${review.attributeName}: ${review.comment}`,
+              fieldPath: index >= 0 ? `attributes[${index}]` : null,
+            },
+          })
+          await recordAudit(tx, {
+            workspaceId: product.workspaceId,
+            productId,
+            actorId: session.userId,
+            action: AUDIT_ACTIONS.COMMENT_ADDED,
+            entityType: 'Comment',
+            entityId: created.id,
+            data: { source: 'workbook-import', attribute: review.attributeName },
+          })
+        }
+      })
+    }
+
+    refresh(productId, 5)
+    if (result.unchanged) {
+      return {
+        ok: `No attribute changed, so no new version was written. ${anchored.length} reviewer comment(s) added to the thread.`,
+      }
+    }
+    return {
+      ok: `Attribute register committed at v${result.version} — ${parsed.register.attributes.length} attributes, ${parsed.approved} approved, ${parsed.changesRequested} with changes requested, ${anchored.length} comment(s) added.${
+        result.staledGateIds.length
+          ? ` ${result.staledGateIds.length} downstream approval(s) went stale.`
+          : ''
+      }`,
+    }
+  } catch (error) {
+    if (error instanceof ArtifactValidationError) {
+      return {
+        error: error.message,
+        details: error.issues.map((issue) => `${issue.path || '(root)'}: ${issue.message}`),
+      }
+    }
+    return { error: error instanceof Error ? error.message : 'The import failed.' }
+  }
+}
+
+/**
+ * Stage 3 profiling from a CSV extract. There is deliberately no warehouse connection anywhere in
+ * this flow — an offline extract is a first-class input, not a fallback.
+ */
+export async function importProfileCsvAction(
+  _prev: Result | undefined,
+  formData: FormData,
+): Promise<Result> {
+  const session = await requireSession()
+  const productId = String(formData.get('productId') ?? '')
+  const sourceName = String(formData.get('sourceName') ?? '').trim()
+  const includeSamples = String(formData.get('includeSamples') ?? '') === 'true'
+  const file = formData.get('file')
+
+  if (!sourceName) return { error: 'Name the source this extract came from.' }
+  if (!(file instanceof File) || file.size === 0) return { error: 'Choose a CSV file to profile.' }
+
+  const product = await prisma.dataProduct.findUniqueOrThrow({
+    where: { id: productId },
+    select: { id: true, workspaceId: true },
+  })
+  try {
+    await assertCanAuthor(session.userId, product.workspaceId, 'Profiling a source extract')
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Not authorised.' }
+  }
+
+  let dataset
+  try {
+    dataset = profileCsv(await file.text(), { sourceName, includeSamples })
+  } catch (error) {
+    if (error instanceof CsvError) return { error: error.message }
+    return { error: 'That file could not be read as CSV.' }
+  }
+
+  const existing = await latestVersion(productId, 'profile-report')
+  const report = mergeProfileDataset(existing?.content, dataset, new Date().toISOString().slice(0, 10))
+
+  try {
+    const result = await commitArtifact({
+      productId,
+      artifactType: 'profile-report',
+      content: report,
+      userId: session.userId,
+      message: `Profiled ${sourceName} from a CSV extract (${dataset.rowCount} rows, ${dataset.columns.length} columns)`,
+    })
+    refresh(productId, 3)
+    const flagged = dataset.columns.filter((column) => column.nullRate > 0.05)
+    return {
+      ok: `Profiled ${dataset.rowCount} rows across ${dataset.columns.length} columns and committed profile-report v${result.version}.${
+        flagged.length
+          ? ` ${flagged.length} column(s) exceed a 5% null rate — run the Profiling agent to turn those into gap-log entries.`
+          : ''
+      }${includeSamples ? '' : ' Sample values were not stored.'}`,
+    }
+  } catch (error) {
+    if (error instanceof ArtifactValidationError) {
+      return {
+        error: error.message,
+        details: error.issues.map((issue) => `${issue.path || '(root)'}: ${issue.message}`),
+      }
+    }
+    return { error: error instanceof Error ? error.message : 'The profile commit failed.' }
+  }
 }

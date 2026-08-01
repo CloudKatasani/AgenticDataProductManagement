@@ -47,7 +47,9 @@ test('a practitioner sees live exit criteria and the gate panel on a stage', asy
   await signIn(page, 'owner@adpm.local')
   await page.goto('/products')
   await page.getByRole('link', { name: 'Arrears & Customer Protection' }).first().click()
+  await page.waitForURL(/\/products\/[^/]+$/)
   await page.getByRole('link', { name: /Open Stage/ }).first().click()
+  await page.waitForURL(/\/stage\/\d+$/)
 
   await expect(page.getByText('Why this stage matters')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Exit criteria' })).toBeVisible()
@@ -61,8 +63,9 @@ test('an agent proposes and a human dispositions — nothing is applied automati
   await signIn(page, 'owner@adpm.local')
   await page.goto('/products')
   await page.getByRole('link', { name: 'Feeder Reliability' }).first().click()
-  const stageLink = page.getByRole('link', { name: /Open Stage/ }).first()
-  await stageLink.click()
+  await page.waitForURL(/\/products\/[^/]+$/)
+  await page.getByRole('link', { name: /Open Stage/ }).first().click()
+  await page.waitForURL(/\/stage\/\d+$/)
 
   const agentPanel = page.locator('section', { hasText: 'Agent assist' }).first()
   await expect(agentPanel).toBeVisible()
@@ -87,4 +90,47 @@ test('the agents tab states plainly that no autonomy level clears a gate', async
   await page.goto('/agents')
   await expect(page.getByText('There is no autonomy level that clears a gate.')).toBeVisible()
   await expect(page.getByText('Proposal acceptance rate')).toBeVisible()
+})
+
+test('a guided tour drives the real UI and survives navigation', async ({ page }) => {
+  await signIn(page, 'consumer@adpm.local')
+  await page.goto('/academy')
+
+  const tourCard = page
+    .locator('article')
+    .filter({ hasText: 'I need data and do not know where to start' })
+  await tourCard.getByRole('button', { name: 'Start this tour' }).click()
+
+  // The tour navigated us to the first step's real screen, and the overlay came with us.
+  await page.waitForURL(/marketplace/)
+  const overlay = page.getByRole('complementary', { name: /Guided tour/ })
+  await expect(overlay).toBeVisible()
+  await expect(overlay.getByText('Step 1 of 4')).toBeVisible()
+
+  await overlay.getByRole('button', { name: 'Next' }).click()
+  await expect(overlay.getByText('Step 2 of 4')).toBeVisible()
+
+  await overlay.getByRole('button', { name: 'Next' }).click()
+  await page.waitForURL(/request/)
+  await expect(overlay.getByText('Step 3 of 4')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Request a data product' })).toBeVisible()
+
+  await overlay.getByRole('button', { name: 'End the tour' }).click()
+  await expect(overlay).toBeHidden()
+})
+
+test('stage 3 offers CSV profiling and stage 5 offers the Excel round trip', async ({ page }) => {
+  await signIn(page, 'steward@adpm.local')
+  await page.goto('/products')
+  await page.getByRole('link', { name: 'Billing Exceptions' }).first().click()
+  await page.waitForURL(/\/products\/[^/]+$/)
+
+  const productUrl = page.url()
+  await page.goto(`${productUrl}/stage/3`)
+  await expect(page.getByRole('heading', { name: 'Profile a CSV extract' })).toBeVisible()
+  await expect(page.getByText('never requires a live warehouse connection')).toBeVisible()
+
+  await page.goto(`${productUrl}/stage/5`)
+  await expect(page.getByRole('heading', { name: 'Attribute register — Excel round trip' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Export workbook' })).toBeVisible()
 })
