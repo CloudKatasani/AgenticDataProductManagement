@@ -57,6 +57,7 @@ export const AUDIT_ACTIONS = {
   AGENT_INVOKED: 'agent.invoked',
   AGENT_PROPOSAL_DISPOSITIONED: 'agent.proposal_dispositioned',
   AGENT_SETTINGS_CHANGED: 'agent.settings_changed',
+  AGENT_MODEL_ASSIGNED: 'agent.model_assigned',
   COMMENT_ADDED: 'comment.added',
   COMMENT_RESOLVED: 'comment.resolved',
   ACCESS_REQUESTED: 'access.requested',

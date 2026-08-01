@@ -200,3 +200,230 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Bring every committed dataset within its refresh commitment, baseline: 62, unit: percent of datasets within commitment, expectedChange: 35, method: Monthly publication register audit, date: '2027-02-28', realised: false }
     telemetry: { consumers: 4, queries30d: 25, sessions30d: 12, daysSinceLastUse: 110, freshnessBreaches30d: 0 }
+
+  - key: citizen-contact-history
+    name: Citizen Contact History
+    domainKey: citizen
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Every interaction a resident has had with the authority, resolved to one person with lawful basis recorded.
+    persona: Customer Services Manager
+    decision: Which repeat-contact residents to route to a named case worker
+    cadence: Weekly
+    workaround: Each service line keeps its own contact log and none of them join up
+    consequence: A resident tells the same story to six departments and still gets no resolution.
+    questions:
+      - Which residents contacted more than three service lines in 90 days?
+      - Which contacts were about an issue already open elsewhere?
+      - What share of contacts are repeat contacts about the same issue?
+    sources:
+      - { name: Contact centre log, system: CRM }
+      - { name: Case management extract, system: Case system }
+    entities:
+      - name: Resident
+        key: resident_id
+        attributes: [resident_id, name*, address*, contact_preference, lawful_basis]
+      - name: ContactEvent
+        key: contact_event_id
+        attributes: [contact_event_id, resident_id, service_line, channel, contacted_at, issue_code]
+    metrics:
+      - { name: multi_service_contacts, label: Multi-service contacts, definition: Residents contacting more than three service lines in 90 days., grain: resident }
+      - { name: repeat_contact_rate, label: Repeat contact rate, definition: Share of contacts repeating an issue already open., grain: contact }
+      - { name: avoidable_contact_volume, label: Avoidable contact volume, definition: Contacts caused by a failure in an earlier interaction., grain: contact }
+    controls: [lawful-basis, special-category, retention-statutory, equality-duty]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 07:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 310
+    platformProfileKey: on-prem
+    value:
+      statement: Cut avoidable repeat contact from 34% to 20% of volume
+      baseline: 34
+      unit: percent repeat contact
+      expectedChange: -14
+      method: Contact centre coding analysis, monthly
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 25, queries30d: 400, sessions30d: 150, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: local-revenue-collection
+    name: Local Revenue Collection
+    domainKey: revenue-collection
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Amounts billed, collected and outstanding by revenue stream, with hardship status carried through.
+    persona: Revenues Manager
+    decision: Which accounts to place on support rather than escalate to enforcement
+    cadence: Weekly
+    workaround: Arrears reports run per revenue stream with hardship flags held separately
+    consequence: A household in hardship is sent to enforcement and the debt becomes uncollectable.
+    questions:
+      - Which accounts are in arrears and carry a hardship indicator?
+      - What proportion of debt referred to enforcement is ever recovered?
+      - Which revenue streams have the worst in-year collection rate?
+    sources:
+      - { name: Revenue ledger, system: Revenues and benefits }
+      - { name: Hardship register, system: Support services }
+    entities:
+      - name: RevenueAccount
+        key: revenue_account_id
+        attributes: [revenue_account_id, resident_id, revenue_stream, balance_outstanding, hardship_flag*]
+      - name: RecoveryAction
+        key: recovery_action_id
+        attributes: [recovery_action_id, revenue_account_id, action_type, taken_at, recovered_amount]
+    metrics:
+      - { name: in_year_collection_rate, label: In-year collection rate, definition: Amount collected as a share of amount billed within the year., grain: revenue stream }
+      - { name: hardship_accounts_in_arrears, label: Hardship accounts in arrears, definition: Accounts in arrears carrying a hardship indicator., grain: account }
+      - { name: enforcement_recovery_rate, label: Enforcement recovery rate, definition: Share of debt referred to enforcement that is recovered., grain: referral }
+    controls: [lawful-basis, special-category, equality-duty, automated-decision]
+    patterns: [certified-dashboard, operational-activation, self-serve-exploration]
+    freshness: Daily by 06:00
+    qualityScore: 92
+    costToServeUsdPerMonth: 380
+    platformProfileKey: warehouse
+    value:
+      statement: Stop referring hardship households to enforcement
+      baseline: 620
+      unit: hardship referrals per year
+      expectedChange: -620
+      method: Enforcement referral audit against the hardship register
+      date: '2027-03-31'
+      realised: true
+      measured: 11
+    telemetry: { consumers: 22, queries30d: 350, sessions30d: 130, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: estates-and-asset-condition
+    name: Estates & Asset Condition
+    domainKey: assets-estates
+    archetype: ENTITY_MASTER
+    tier: AGGREGATE
+    description: Buildings and land held, with condition survey results, statutory compliance and running cost.
+    persona: Head of Corporate Landlord
+    decision: Which buildings to invest in, dispose of or close
+    cadence: Quarterly
+    workaround: Condition surveys held as PDFs and summarised into a board paper once a year
+    consequence: Statutory compliance lapses in a building nobody realised the authority still held.
+    questions:
+      - Which properties have overdue statutory compliance checks?
+      - Which have the worst condition score relative to running cost?
+      - Which assets are held but recorded as unoccupied?
+    sources:
+      - { name: Property register, system: Estates management }
+      - { name: Compliance checks, system: Facilities management }
+    entities:
+      - name: Property
+        key: property_id
+        attributes: [property_id, property_name, tenure, floor_area_sqm, condition_score, occupancy_status]
+      - name: ComplianceCheck
+        key: compliance_check_id
+        attributes: [compliance_check_id, property_id, check_type, due_date, completed_at]
+    metrics:
+      - { name: overdue_compliance_checks, label: Overdue compliance checks, definition: Statutory checks past their due date., grain: property }
+      - { name: cost_per_square_metre, label: Cost per square metre, definition: Annual running cost divided by floor area., grain: property }
+      - { name: unoccupied_holding_cost, label: Unoccupied holding cost, definition: Running cost of properties recorded as unoccupied., grain: property }
+    controls: [foi-readiness, retention-statutory, open-data-standard, residency]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Monthly, by working day 5
+    qualityScore: 85
+    costToServeUsdPerMonth: 290
+    platformProfileKey: warehouse
+    value:
+      statement: Bring overdue statutory compliance checks to zero and keep them there
+      baseline: 213
+      unit: overdue checks
+      expectedChange: -213
+      method: Facilities management compliance report, monthly
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 13, queries30d: 160, sessions30d: 60, daysSinceLastUse: 11, freshnessBreaches30d: 1 }
+
+  - key: workforce-capacity
+    name: Workforce Capacity
+    domainKey: workforce
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Establishment, vacancy, agency use and turnover by service, with cost of cover.
+    persona: Director of Workforce
+    decision: Which services to recruit into permanently rather than continue covering with agency
+    cadence: Monthly
+    workaround: Establishment lists and agency invoices reconciled by hand each month
+    consequence: Agency cover becomes permanent by default at twice the cost.
+    questions:
+      - Which services carry the highest vacancy rate?
+      - What is being spent on agency cover per vacant post?
+      - Which services lose staff fastest within twelve months of joining?
+    sources:
+      - { name: Establishment and post data, system: HR system }
+      - { name: Agency invoices, system: Finance }
+    entities:
+      - name: Post
+        key: post_id
+        attributes: [post_id, service_area, grade, establishment_fte, filled_fte]
+      - name: AgencyPlacement
+        key: placement_id
+        attributes: [placement_id, post_id, supplier, start_date, end_date, weekly_cost]
+    metrics:
+      - { name: vacancy_rate, label: Vacancy rate, definition: Unfilled establishment as a share of budgeted establishment., grain: service area }
+      - { name: agency_cost_per_vacancy, label: Agency cost per vacancy, definition: Agency spend divided by vacant full-time equivalents., grain: service area }
+      - { name: twelve_month_turnover, label: Twelve-month turnover, definition: Share of joiners leaving within twelve months., grain: service area }
+    controls: [special-category, lawful-basis, retention-statutory, equality-duty]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Monthly, by working day 6
+    qualityScore: 87
+    costToServeUsdPerMonth: 260
+    platformProfileKey: on-prem
+    value:
+      statement: Convert the ten most expensive agency-covered posts to permanent
+      baseline: 4100000
+      unit: USD agency spend per year
+      expectedChange: -1600000
+      method: Finance agency spend ledger, quarterly
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 16, queries30d: 210, sessions30d: 80, daysSinceLastUse: 6, freshnessBreaches30d: 0 }
+
+  - key: corporate-performance-reporting
+    name: Corporate Performance Reporting
+    domainKey: performance-reporting
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: The published corporate indicators, each traceable to the source that produced it.
+    persona: Head of Performance
+    decision: Which indicators to escalate to the leadership board this quarter
+    cadence: Quarterly
+    workaround: Indicators collected by email from service leads and pasted into a board pack
+    consequence: A published indicator is challenged and nobody can say how it was calculated.
+    questions:
+      - Which indicators moved outside tolerance this quarter?
+      - Which published figures have no traceable source?
+      - Which indicators have been restated after publication?
+    sources:
+      - { name: Indicator submissions, system: Performance system }
+      - { name: Source system extracts, system: Data warehouse }
+    entities:
+      - name: PerformanceIndicator
+        key: indicator_id
+        attributes: [indicator_id, indicator_name, service_area, target_value, reported_value, period]
+      - name: IndicatorSource
+        key: indicator_source_id
+        attributes: [indicator_source_id, indicator_id, source_system, extract_date, traceable]
+    metrics:
+      - { name: indicators_outside_tolerance, label: Indicators outside tolerance, definition: Published indicators outside their agreed tolerance band., grain: indicator }
+      - { name: untraceable_indicator_count, label: Untraceable indicators, definition: Published indicators with no resolving source reference., grain: indicator }
+      - { name: post_publication_restatements, label: Post-publication restatements, definition: Indicators restated after being published., grain: indicator }
+    controls: [foi-readiness, open-data-standard, retention-statutory, automated-decision]
+    patterns: [certified-dashboard, bulk-extract, api-embedded]
+    freshness: Quarterly, by working day 10
+    qualityScore: 93
+    costToServeUsdPerMonth: 300
+    platformProfileKey: warehouse
+    value:
+      statement: Every published indicator traceable to its source within one working day
+      baseline: 41
+      unit: percent traceable
+      expectedChange: 59
+      method: Sample audit of published indicators each quarter
+      date: '2027-05-31'
+      realised: true
+      measured: 100
+    telemetry: { consumers: 20, queries30d: 240, sessions30d: 95, daysSinceLastUse: 4, freshnessBreaches30d: 0 }

@@ -5,8 +5,10 @@ import { AGENTS, AGENT_FORBIDDEN_ACTIONS } from '@/lib/agents/registry'
 import { AUTONOMY_LABELS, AUTONOMY_LEVELS } from '@/lib/domain/enums'
 import { credentialStatus } from '@/lib/secrets'
 import { artifactTitle } from '@/lib/artifacts/registry'
-import { StewardRunForm } from './panels'
+import { AgentTargeting, StewardRunForm, type TargetOption } from './panels'
 import { updateAgentSetting, updateWorkspaceAgentPolicy } from './actions'
+import { AGENT_MODELS, DEFAULT_MODEL_BY_LEVEL } from '@/lib/agents/models'
+import { validatePack } from '@/lib/packs/schema'
 import { Badge, Button, Card, CardBody, CardHeader, Callout, PageHeader } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +42,59 @@ export default async function AgentsPage() {
   const spendByAgent = new Map<string, number>()
   for (const action of actions) {
     spendByAgent.set(action.agentId, (spendByAgent.get(action.agentId) ?? 0) + action.estimatedCostUsd)
+  }
+
+  // Every workspace this user actually holds a role in — one per industry pack. The targeting
+  // panel offers these and no others, and each action re-checks authority against the workspace
+  // it was given rather than trusting the field.
+  const assignments = await prisma.roleAssignment.findMany({
+    where: { userId: session.userId },
+    include: { workspace: true },
+  })
+  const reachableWorkspaceIds = [...new Set(assignments.map((a) => a.workspaceId))]
+  const workspaces = await prisma.workspace.findMany({
+    where: { id: { in: reachableWorkspaceIds }, archivedAt: null },
+    include: {
+      domains: { where: { archivedAt: null }, orderBy: { name: 'asc' } },
+      products: {
+        where: { archivedAt: null },
+        include: { domain: true },
+        orderBy: { name: 'asc' },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+  const packRows = await prisma.pack.findMany({
+    where: { key: { in: [...new Set(workspaces.map((w) => w.packKey))] } },
+  })
+  const industryByPack = new Map(
+    packRows.map((row) => [row.key, validatePack(JSON.parse(row.contentJson)).industry]),
+  )
+
+  const targets: TargetOption[] = workspaces.map((ws) => ({
+    workspaceId: ws.id,
+    industry: industryByPack.get(ws.packKey) ?? ws.name,
+    workspaceName: ws.name,
+    domains: ws.domains.map((d) => ({ key: d.key, name: d.name })),
+    products: ws.products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      domainKey: p.domain.key,
+      stage: p.currentStage,
+      status: p.status,
+    })),
+  }))
+
+  const modelAssignments = await prisma.modelAssignment.findMany({
+    where: { workspaceId: { in: reachableWorkspaceIds } },
+  })
+  const assignmentsByWorkspace: Record<string, Record<string, string>> = {}
+  for (const ws of workspaces) {
+    assignmentsByWorkspace[ws.id] = { ...DEFAULT_MODEL_BY_LEVEL }
+  }
+  for (const assignment of modelAssignments) {
+    const bucket = assignmentsByWorkspace[assignment.workspaceId]
+    if (bucket) bucket[assignment.autonomyLevel] = assignment.modelId
   }
 
   const publishedProducts = await prisma.dataProduct.findMany({
@@ -95,6 +150,43 @@ export default async function AgentsPage() {
           </p>
         </div>
       </div>
+
+      <Card className="mt-8">
+        <CardHeader
+          title="Target an agent: industry, domain, data product"
+          description="Narrow to the product you care about, and set which model backs each autonomy level for that industry."
+        />
+        <CardBody>
+          <AgentTargeting
+            targets={targets}
+            initialWorkspaceId={session.workspaceId}
+            assignmentsByWorkspace={assignmentsByWorkspace}
+            models={AGENT_MODELS.map((m) => ({
+              id: m.id,
+              name: m.name,
+              tier: m.tier,
+              bestFor: m.bestFor,
+              pricePerMillionInput: m.pricePerMillionInput,
+              pricePerMillionOutput: m.pricePerMillionOutput,
+              suitedTo: [...m.suitedTo],
+            }))}
+            levels={AUTONOMY_LEVELS.map((level) => ({
+              level,
+              name: AUTONOMY_LABELS[level].name,
+              behaviour: AUTONOMY_LABELS[level].behaviour,
+            }))}
+            isAdmin={isAdmin}
+          />
+          <p className="mt-4 text-xs text-ink-500">
+            The model list is held as data in <code>src/lib/agents/models.ts</code> and maintained by
+            hand — nothing here queries a vendor for available models, so a newly released one will
+            not appear until someone adds it.{' '}
+            {credentials.configured
+              ? `A provider key is configured, so the assigned model is the one that runs.`
+              : `No provider key is configured, so runs fall back to the deterministic local heuristic. The action log records the assigned model and the one that actually ran, separately — it will not tell you a model ran when it did not.`}
+          </p>
+        </CardBody>
+      </Card>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -169,7 +261,7 @@ export default async function AgentsPage() {
                     <th className="px-3 py-2">Agent</th>
                     <th className="px-3 py-2">Product / stage</th>
                     <th className="px-3 py-2">Trigger</th>
-                    <th className="px-3 py-2">Model</th>
+                    <th className="px-3 py-2">Model (assigned → ran)</th>
                     <th className="px-3 py-2">Cost</th>
                     <th className="px-5 py-2">Disposition</th>
                   </tr>
@@ -202,7 +294,17 @@ export default async function AgentsPage() {
                         · S{action.stageNumber}
                       </td>
                       <td className="px-3 py-2 text-xs">{action.trigger}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{action.model}</td>
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {action.configuredModel && action.configuredModel !== action.model ? (
+                          <>
+                            <span className="text-ink-500">{action.configuredModel}</span>
+                            {' → '}
+                            <span>{action.model}</span>
+                          </>
+                        ) : (
+                          action.model
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-xs">${action.estimatedCostUsd.toFixed(4)}</td>
                       <td className="px-5 py-2 text-xs">
                         <Badge

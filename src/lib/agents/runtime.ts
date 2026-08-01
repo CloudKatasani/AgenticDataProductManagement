@@ -10,6 +10,7 @@ import { buildStageContext } from '@/lib/lifecycle/context'
 import { getStage } from '@/lib/lifecycle/stages'
 import { decisionRegisterSchema, semanticModelSchema } from '@/lib/artifacts/registry'
 import { getAgent, type AgentDefinition } from './registry'
+import { DEFAULT_MODEL_BY_LEVEL, isKnownModel } from './models'
 import { redactForAgent } from './redaction'
 import {
   createAnthropicProvider,
@@ -82,10 +83,26 @@ export async function effectiveAutonomy(
     : configured
 }
 
-async function resolveProvider(): Promise<AgentProvider> {
+/**
+ * Which model the workspace has assigned to an autonomy level. An explicit `ANTHROPIC_API_KEY`
+ * model override still wins, because that is set by whoever runs the process, not by a UI.
+ */
+export async function assignedModel(
+  workspaceId: string,
+  autonomy: AutonomyLevel,
+): Promise<string> {
+  const assignment = await prisma.modelAssignment.findUnique({
+    where: { workspaceId_autonomyLevel: { workspaceId, autonomyLevel: autonomy } },
+  })
+  if (assignment && isKnownModel(assignment.modelId)) return assignment.modelId
+  return DEFAULT_MODEL_BY_LEVEL[autonomy]
+}
+
+async function resolveProvider(configuredModel: string): Promise<AgentProvider> {
   const { apiKey, model } = await getAgentCredentials()
   if (!apiKey) return localHeuristicProvider
-  return createAnthropicProvider(apiKey, model)
+  // The env override is deliberate operator intent; otherwise honour the workspace assignment.
+  return createAnthropicProvider(apiKey, model ?? configuredModel)
 }
 
 export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentResult> {
@@ -148,7 +165,10 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
   })
 
   const facts = await buildFacts(agent, ctx, product)
-  const provider = await resolveProvider()
+  // Recorded whether or not it is the model that ends up running: with no API key the local
+  // heuristic runs instead, and the action log has to show both rather than imply otherwise.
+  const configuredModel = await assignedModel(input.workspaceId, autonomy)
+  const provider = await resolveProvider(configuredModel)
 
   let result: ProviderResult
   try {
@@ -178,6 +198,7 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
         scopeJson: JSON.stringify(agent.readScope),
         inputHash,
         model: result.model,
+        configuredModel,
         promptTokens: result.promptTokens,
         completionTokens: result.completionTokens,
         estimatedCostUsd: result.estimatedCostUsd,

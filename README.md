@@ -16,7 +16,7 @@ consumption and retirement.
 
 ```bash
 pnpm install          # installs dependencies, creates .env, generates the Prisma client
-pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 27 certified products
+pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 73 certified products
 pnpm dev              # http://localhost:3000
 ```
 
@@ -58,8 +58,9 @@ makes no network call at all.
 fails. It produces:
 
 - 9 workspaces, one per industry pack, with one user per role in each
-- 27 data products, each certified and published through all 12 gates (324 approved gates)
-- ~675 content-hashed artifact versions and ~2,350 append-only audit events
+- 73 data products, each certified and published through all 12 gates (876 approved gates) —
+  every industry and domain combination the packs declare has at least one
+- ~1,825 content-hashed artifact versions and ~6,350 append-only audit events
 - A cross-industry marketplace, an intake queue with a breached triage target, a declined request
   with its reason visible to the requester, and an open change request
 
@@ -173,6 +174,17 @@ ceiling and an escalation rule (`src/lib/agents/registry.ts`).
 
 There is deliberately **no level that clears a gate or commits a version**. A workspace setting can
 lower an agent's ceiling; it can never raise it.
+
+**Choosing a model per autonomy level.** The Agents tab narrows by industry → domain → data
+product, and lets an admin assign an Anthropic model to each level for that industry — Opus for
+adversarial critique, Sonnet for drafting, Haiku for scheduled monitoring across many products. The
+catalogue is data (`src/lib/agents/models.ts`), maintained by hand; nothing queries a vendor for
+available models. **A model choice changes what an agent is good at, never what it may do** — L3 is
+read-only monitoring whichever model backs it, and that is asserted in a test.
+
+With no API key the deterministic local provider runs regardless of what is assigned, so the action
+log records the **assigned** model and the model that **actually ran** as separate fields. It will
+never tell you a model ran when it did not.
 
 Invoking an agent is a mutation — it spends workspace budget and puts product content in front of a
 model — so it is authorised by role server-side in the runtime, not at the route. `pnpm monitor` is

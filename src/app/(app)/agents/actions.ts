@@ -9,6 +9,7 @@ import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { AUTONOMY_LEVELS, type AutonomyLevel } from '@/lib/domain/enums'
 import { getAgent } from '@/lib/agents/registry'
 import { invokeAgent, AgentError } from '@/lib/agents/runtime'
+import { getModel, isKnownModel } from '@/lib/agents/models'
 import { setAgentCredentials } from '@/lib/secrets'
 
 const settingSchema = z.object({
@@ -118,5 +119,71 @@ export async function runScheduledSteward(
   } catch (error) {
     if (error instanceof AgentError) return { error: error.message }
     return { error: error instanceof Error ? error.message : 'The scheduled run failed.' }
+  }
+}
+
+const modelAssignmentSchema = z.object({
+  workspaceId: z.string().min(1),
+  autonomyLevel: z.enum(AUTONOMY_LEVELS),
+  modelId: z.string().refine(isKnownModel, 'Unknown model'),
+})
+
+/**
+ * Assign a model to an autonomy level in a workspace.
+ *
+ * The workspace comes from the form so the Agents tab can configure any industry the user holds a
+ * role in, but authority is re-derived against *that* workspace rather than the session's default
+ * (invariant 10). A workspace id in a form is a request, never a claim.
+ *
+ * A model choice changes what an agent is good at, never what it may do.
+ */
+export async function updateModelAssignment(
+  _prev: { ok?: string; error?: string } | undefined,
+  formData: FormData,
+): Promise<{ ok?: string; error?: string }> {
+  const session = await requireSession()
+  const parsed = modelAssignmentSchema.safeParse({
+    workspaceId: formData.get('workspaceId'),
+    autonomyLevel: formData.get('autonomyLevel'),
+    modelId: formData.get('modelId'),
+  })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Choose a model.' }
+
+  try {
+    await assertRole(session.userId, parsed.data.workspaceId, ['ADMIN'], 'Assigning an agent model')
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Not authorised.' }
+  }
+
+  const model = getModel(parsed.data.modelId)
+  await prisma.$transaction(async (tx) => {
+    await tx.modelAssignment.upsert({
+      where: {
+        workspaceId_autonomyLevel: {
+          workspaceId: parsed.data.workspaceId,
+          autonomyLevel: parsed.data.autonomyLevel,
+        },
+      },
+      update: { modelId: parsed.data.modelId, updatedById: session.userId },
+      create: {
+        workspaceId: parsed.data.workspaceId,
+        autonomyLevel: parsed.data.autonomyLevel,
+        modelId: parsed.data.modelId,
+        updatedById: session.userId,
+      },
+    })
+    await recordAudit(tx, {
+      workspaceId: parsed.data.workspaceId,
+      actorId: session.userId,
+      action: AUDIT_ACTIONS.AGENT_MODEL_ASSIGNED,
+      entityType: 'ModelAssignment',
+      entityId: `${parsed.data.workspaceId}:${parsed.data.autonomyLevel}`,
+      data: { autonomyLevel: parsed.data.autonomyLevel, modelId: parsed.data.modelId },
+    })
+  })
+
+  revalidatePath('/agents')
+  return {
+    ok: `${parsed.data.autonomyLevel} now runs on ${model?.name ?? parsed.data.modelId}. This changes what the agent is good at, not what it may do.`,
   }
 }

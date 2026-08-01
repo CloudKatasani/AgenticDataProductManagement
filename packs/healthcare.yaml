@@ -200,3 +200,229 @@ seedProducts:
     platformProfileKey: warehouse
     value: { statement: Increase denial recovery value by 15% within two quarters, baseline: 0, unit: percent increase in recovered value, expectedChange: 15, method: Recovered value compared against the prior two quarters, date: '2027-04-30', realised: false }
     telemetry: { consumers: 9, queries30d: 95, sessions30d: 40, daysSinceLastUse: 6, freshnessBreaches30d: 1 }
+
+  - key: patient-identity-resolution
+    name: Patient Identity Resolution
+    domainKey: patient
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: One patient, one identifier, with the duplicate and merge history visible rather than hidden.
+    persona: Health Records Manager
+    decision: Which suspected duplicate records to merge this week
+    cadence: Weekly
+    workaround: Duplicate reports reviewed manually in the patient administration system
+    consequence: A clinician sees half a patient's history and repeats a test or misses an allergy.
+    questions:
+      - Which records are probable duplicates of the same patient?
+      - How many patients have records in more than one source system?
+      - Which merges were later reversed, and why?
+    sources:
+      - { name: Patient administration extract, system: PAS }
+      - { name: Community records, system: Community system }
+    entities:
+      - name: Patient
+        key: patient_id
+        attributes: [patient_id, nhs_number*, name*, date_of_birth*, source_system, merge_status]
+      - name: MergeEvent
+        key: merge_event_id
+        attributes: [merge_event_id, surviving_patient_id, merged_patient_id, merged_at, reversed]
+    metrics:
+      - { name: probable_duplicate_pairs, label: Probable duplicate pairs, definition: Record pairs above the match threshold not yet merged., grain: pair }
+      - { name: cross_system_patient_count, label: Cross-system patients, definition: Patients holding records in more than one source system., grain: patient }
+      - { name: merge_reversal_rate, label: Merge reversal rate, definition: Share of merges later reversed., grain: merge }
+    controls: [identity-matching, phi-minimum-necessary, audit-access, retention-health-record]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 05:00
+    qualityScore: 94
+    costToServeUsdPerMonth: 640
+    platformProfileKey: on-prem
+    value:
+      statement: Reduce unmerged probable duplicates from 4,200 to under 500
+      baseline: 4200
+      unit: unmerged duplicate pairs
+      expectedChange: -3700
+      method: Weekly duplicate report count
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 21, queries30d: 340, sessions30d: 130, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: theatre-utilisation
+    name: Theatre Utilisation
+    domainKey: clinical
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Scheduled versus actual theatre time, with cancellation causes and list over-run.
+    persona: Theatre Scheduling Lead
+    decision: Which lists to rebuild to recover theatre capacity next month
+    cadence: Weekly
+    workaround: Theatre logs transcribed into a scheduling spreadsheet each Friday
+    consequence: Sessions run half empty while the waiting list grows.
+    questions:
+      - Which theatre sessions ran under 70% of scheduled time?
+      - What are the leading causes of same-day cancellation?
+      - Which specialties most often over-run their allocated list?
+    sources:
+      - { name: Theatre log, system: Theatre management }
+      - { name: Scheduled lists, system: PAS }
+    entities:
+      - name: TheatreSession
+        key: session_id
+        attributes: [session_id, theatre_id, specialty, scheduled_minutes, actual_minutes, session_date]
+      - name: Cancellation
+        key: cancellation_id
+        attributes: [cancellation_id, session_id, patient_id, cancelled_at, cause_code]
+    metrics:
+      - { name: theatre_utilisation_rate, label: Theatre utilisation rate, definition: Actual operating minutes as a share of scheduled minutes., grain: session }
+      - { name: same_day_cancellations, label: Same-day cancellations, definition: Procedures cancelled on the day of surgery., grain: session }
+      - { name: list_overrun_minutes, label: List over-run, definition: Minutes a list runs beyond its allocated session., grain: session }
+    controls: [phi-minimum-necessary, clinical-coding-accuracy, audit-access, retention-health-record]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Daily by 07:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 410
+    platformProfileKey: warehouse
+    value:
+      statement: Lift theatre utilisation from 74% to 85%
+      baseline: 74
+      unit: percent utilisation
+      expectedChange: 11
+      method: Theatre management system reporting, monthly
+      date: '2027-03-31'
+      realised: true
+      measured: 83
+    telemetry: { consumers: 27, queries30d: 470, sessions30d: 175, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: safety-incident-signals
+    name: Safety Incident Signals
+    domainKey: quality-safety
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Reported incidents and near misses, clustered by location, category and contributing factor.
+    persona: Patient Safety Lead
+    decision: Which ward or process to investigate before an incident recurs
+    cadence: Weekly
+    workaround: Incident forms read individually with themes noted by hand
+    consequence: A pattern visible across twenty reports is only recognised after the twenty-first.
+    questions:
+      - Which incident categories are rising fastest this quarter?
+      - Which locations report near misses but never incidents?
+      - Which contributing factors recur across severity levels?
+    sources:
+      - { name: Incident reports, system: Incident reporting }
+      - { name: Ward roster, system: Workforce }
+    entities:
+      - name: SafetyIncident
+        key: incident_id
+        attributes: [incident_id, location_id, category, severity, reported_at, contributing_factor]
+      - name: Location
+        key: location_id
+        attributes: [location_id, ward_name, division, bed_count]
+    metrics:
+      - { name: incident_rate_per_bed_day, label: Incident rate per bed day, definition: Reported incidents normalised by occupied bed days., grain: location }
+      - { name: near_miss_reporting_ratio, label: Near-miss reporting ratio, definition: Near misses reported per harm incident., grain: location }
+      - { name: recurring_factor_count, label: Recurring contributing factors, definition: Contributing factors appearing across three or more incidents in a quarter., grain: factor }
+    controls: [phi-minimum-necessary, de-identification, audit-access, retention-health-record]
+    patterns: [certified-dashboard, self-serve-exploration, operational-activation]
+    freshness: Daily by 08:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 350
+    platformProfileKey: on-prem
+    value:
+      statement: Raise the near-miss reporting ratio, the leading indicator of a safe culture
+      baseline: 3.1
+      unit: near misses per harm incident
+      expectedChange: 4
+      method: Quarterly safety report trend
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 19, queries30d: 290, sessions30d: 105, daysSinceLastUse: 3, freshnessBreaches30d: 0 }
+
+  - key: population-risk-stratification
+    name: Population Risk Stratification
+    domainKey: population-health
+    archetype: FEATURE_STORE
+    tier: CONSUMER_ALIGNED
+    description: De-identified cohort risk features for proactive outreach, with consent state carried through.
+    persona: Population Health Analyst
+    decision: Which cohort to offer proactive outreach to this quarter
+    cadence: Quarterly
+    workaround: Risk scores produced ad hoc in a notebook nobody else can reproduce
+    consequence: Outreach goes to the cohort that is easiest to list rather than the one at most risk.
+    questions:
+      - Which cohorts show the steepest rise in unplanned admission risk?
+      - Which high-risk patients have consented to research contact?
+      - How do risk factors differ between deprivation deciles?
+    sources:
+      - { name: De-identified clinical extract, system: Data warehouse }
+      - { name: Consent register, system: Consent platform }
+    entities:
+      - name: PatientCohort
+        key: cohort_id
+        attributes: [cohort_id, cohort_name, deprivation_decile, member_count]
+      - name: RiskFeature
+        key: feature_id
+        attributes: [feature_id, cohort_id, feature_name, feature_value, computed_at]
+    metrics:
+      - { name: unplanned_admission_risk, label: Unplanned admission risk, definition: Modelled probability of unplanned admission within 12 months., grain: cohort }
+      - { name: research_consent_coverage, label: Research consent coverage, definition: Share of a cohort with active research contact consent., grain: cohort }
+      - { name: risk_factor_gradient, label: Risk factor gradient, definition: Difference in a risk factor between highest and lowest deprivation deciles., grain: factor }
+    controls: [de-identification, consent-research, phi-minimum-necessary, audit-access]
+    patterns: [ml-feature, certified-dashboard, bulk-extract]
+    freshness: Monthly, by working day 5
+    qualityScore: 87
+    costToServeUsdPerMonth: 520
+    platformProfileKey: warehouse
+    value:
+      statement: Direct outreach capacity at the highest-risk quintile rather than the easiest to list
+      baseline: 0
+      unit: outreach programmes targeted on measured risk
+      expectedChange: 4
+      method: Programme design documents referencing this product
+      date: '2027-07-31'
+      realised: false
+    telemetry: { consumers: 13, queries30d: 160, sessions30d: 60, daysSinceLastUse: 8, freshnessBreaches30d: 1 }
+
+  - key: pharmacy-stock-and-expiry
+    name: Pharmacy Stock & Expiry
+    domainKey: supply-pharmacy
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: Medicine stock on hand by location with expiry, recall status and consumption rate.
+    persona: Chief Pharmacist
+    decision: Which stock to redistribute between sites before it expires
+    cadence: Weekly
+    workaround: Each site counts its own stock and shares a spreadsheet on request
+    consequence: One site writes off medicine that another site is buying in the same week.
+    questions:
+      - Which medicines expire within 60 days and where are they held?
+      - Which lines are recalled but still showing as available stock?
+      - Which sites consume fastest relative to holding?
+    sources:
+      - { name: Stock ledger, system: Pharmacy stock control }
+      - { name: Recall notices, system: Regulatory feed }
+    entities:
+      - name: StockLine
+        key: stock_line_id
+        attributes: [stock_line_id, site_id, medicine_code, batch_number, quantity, expiry_date]
+      - name: RecallNotice
+        key: recall_id
+        attributes: [recall_id, medicine_code, batch_number, issued_at, severity]
+    metrics:
+      - { name: expiring_stock_value, label: Expiring stock value, definition: Value of stock expiring within 60 days., grain: site }
+      - { name: recalled_stock_available, label: Recalled stock still available, definition: Stock lines under recall not yet quarantined., grain: stock line }
+      - { name: consumption_to_holding_ratio, label: Consumption to holding ratio, definition: Weekly consumption divided by quantity on hand., grain: site }
+    controls: [retention-health-record, audit-access, clinical-coding-accuracy, residency]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Daily by 06:00
+    qualityScore: 92
+    costToServeUsdPerMonth: 380
+    platformProfileKey: warehouse
+    value:
+      statement: Cut medicine write-off from expiry by half
+      baseline: 620000
+      unit: USD written off per year
+      expectedChange: -310000
+      method: Finance write-off ledger, year on year
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 16, queries30d: 250, sessions30d: 90, daysSinceLastUse: 2, freshnessBreaches30d: 0 }

@@ -318,3 +318,327 @@ seedProducts:
       date: '2027-01-31'
       realised: false
     telemetry: { consumers: 8, queries30d: 60, sessions30d: 25, daysSinceLastUse: 120, freshnessBreaches30d: 3 }
+
+  # --- Customer & Account ---------------------------------------------------
+  # Four products under one domain on purpose: it is the domain a utility has most
+  # decisions in, and it shows that a domain is a place to look, not a single product.
+  - key: customer-contactability
+    name: Customer Contactability
+    domainKey: customer-account
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Whether we can actually reach a customer, by which channel, and with what consent.
+    persona: Customer Communications Lead
+    decision: Which channel to use for an outage or debt notification for each customer this week
+    cadence: Weekly
+    workaround: CRM exports cross-checked by hand against bounce reports and consent spreadsheets
+    consequence: Critical notifications go to dead addresses and the customer finds out from a neighbour.
+    questions:
+      - Which customers have no reachable contact channel at all?
+      - Which contact records failed delivery in the last 90 days?
+      - Which customers have withdrawn consent for marketing but not for service messages?
+    sources:
+      - { name: Customer master, system: CIS }
+      - { name: Delivery receipts, system: Notification platform }
+    entities:
+      - name: Customer
+        key: customer_id
+        attributes: [customer_id, customer_name*, contact_email*, contact_mobile*, preferred_channel, consent_marketing]
+      - name: ContactAttempt
+        key: attempt_id
+        attributes: [attempt_id, customer_id, channel, sent_at, delivery_status]
+    metrics:
+      - { name: reachable_customer_rate, label: Reachable customer rate, definition: Share of customers with at least one channel that delivered in the last 90 days., grain: customer }
+      - { name: contact_delivery_failure_rate, label: Contact delivery failure rate, definition: Share of contact attempts that failed delivery., grain: attempt }
+      - { name: service_consent_coverage, label: Service consent coverage, definition: Share of customers with valid consent for service notifications., grain: customer }
+    controls: [consent-marketing, pii-minimisation, retention-billing, residency]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 91
+    costToServeUsdPerMonth: 310
+    platformProfileKey: snowflake
+    value:
+      statement: Cut undeliverable outage notifications from 14% to under 5% of sends
+      baseline: 14
+      unit: percent undeliverable
+      expectedChange: -9
+      method: Delivery-receipt analysis over two comparable storm periods
+      date: '2026-12-31'
+      realised: true
+      measured: 4.6
+    telemetry: { consumers: 22, queries30d: 410, sessions30d: 140, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: vulnerable-customer-register
+    name: Vulnerable Customer Register
+    domainKey: customer-account
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Who carries a vulnerability or medical-dependency flag, from which source, and how recently it was confirmed.
+    persona: Customer Care Team Leader
+    decision: Which customers to exclude from disconnection and prioritise during an outage
+    cadence: Daily
+    workaround: Three separate registers reconciled by a team leader each morning
+    consequence: A medically dependent customer is disconnected or missed during restoration.
+    questions:
+      - Which customers hold an active vulnerability flag today?
+      - Which flags have not been reconfirmed within their review period?
+      - Which vulnerable customers are on a feeder currently at risk?
+    sources:
+      - { name: Care register, system: CIS }
+      - { name: Medical dependency submissions, system: Care portal }
+    entities:
+      - name: Customer
+        key: customer_id
+        attributes: [customer_id, customer_name*, vulnerability_type*, medical_dependency_flag*, confirmed_at, review_due_at]
+      - name: Premise
+        key: premise_id
+        attributes: [premise_id, customer_id, feeder_id, address*]
+    metrics:
+      - { name: active_vulnerability_flags, label: Active vulnerability flags, definition: Customers holding an in-date vulnerability or medical-dependency flag., grain: customer }
+      - { name: overdue_vulnerability_reviews, label: Overdue vulnerability reviews, definition: Flags past their reconfirmation date., grain: customer }
+      - { name: vulnerable_customers_at_risk, label: Vulnerable customers at risk, definition: Flagged customers served by a feeder with an open reliability concern., grain: customer }
+    controls: [protected-status, pii-minimisation, residency, retention-billing]
+    patterns: [certified-dashboard, operational-activation, api-embedded]
+    freshness: Hourly
+    qualityScore: 96
+    costToServeUsdPerMonth: 540
+    platformProfileKey: snowflake
+    value:
+      statement: Eliminate erroneous disconnection of medically dependent customers
+      baseline: 7
+      unit: incidents per year
+      expectedChange: -7
+      method: Incident review against the regulator-reportable disconnection log
+      date: '2027-03-31'
+      realised: false
+    telemetry: { consumers: 41, queries30d: 1180, sessions30d: 390, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: move-in-move-out
+    name: Move-In / Move-Out
+    domainKey: customer-account
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Occupancy changes at a premise, joined to final reads and account opening, so the gap between them is visible.
+    persona: Revenue Assurance Analyst
+    decision: Which premises to chase for an unclosed move-out before the revenue becomes unrecoverable
+    cadence: Weekly
+    workaround: Occupancy events exported and matched to reads in a pivot table
+    consequence: Energy is consumed at a premise with nobody billable attached to it.
+    questions:
+      - Which move-outs have no final read within five days?
+      - Which premises have been unoccupied on the system but consuming energy?
+      - How long does a move-in take to reach first bill?
+    sources:
+      - { name: Occupancy events, system: CIS }
+      - { name: Interval reads, system: MDM }
+    entities:
+      - name: OccupancyEvent
+        key: occupancy_event_id
+        attributes: [occupancy_event_id, premise_id, account_id, event_type, effective_date]
+      - name: Premise
+        key: premise_id
+        attributes: [premise_id, address*, service_point_id, occupancy_status]
+    metrics:
+      - { name: unclosed_move_outs, label: Unclosed move-outs, definition: Move-out events with no final read recorded within five days., grain: occupancy event }
+      - { name: unoccupied_consumption_kwh, label: Unoccupied consumption, definition: Energy consumed at premises flagged unoccupied., grain: premise }
+      - { name: move_in_to_first_bill_days, label: Move-in to first bill, definition: Days from move-in effective date to first issued invoice., grain: occupancy event }
+    controls: [retention-billing, pii-minimisation, meter-data-access]
+    patterns: [certified-dashboard, bulk-extract]
+    freshness: Daily by 05:00
+    qualityScore: 88
+    costToServeUsdPerMonth: 260
+    platformProfileKey: databricks
+    value:
+      statement: Recover revenue lost to unclosed move-outs
+      baseline: 410000
+      unit: USD leakage per year
+      expectedChange: -280000
+      method: Compare billed energy to metered energy at premise level, year on year
+      date: '2027-02-28'
+      realised: false
+    telemetry: { consumers: 15, queries30d: 230, sessions30d: 90, daysSinceLastUse: 3, freshnessBreaches30d: 1 }
+
+  # --- Metering & AMI -------------------------------------------------------
+  - key: meter-data-quality
+    name: Meter Data Quality
+    domainKey: metering-ami
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Estimated versus actual reads, communication health and gap analysis across the AMI estate.
+    persona: Metering Operations Manager
+    decision: Which meter population to send a field crew to before the next billing run
+    cadence: Weekly
+    workaround: Head-end system exports summarised in a weekly spreadsheet
+    consequence: Bills go out on estimates, complaints follow, and the true fault stays hidden.
+    questions:
+      - Which meters have not communicated in the last seven days?
+      - What share of reads used in the last billing run were estimated?
+      - Which communication failures cluster on a single collector?
+    sources:
+      - { name: Head-end read stream, system: AMI head-end }
+      - { name: Meter register, system: MDM }
+    entities:
+      - name: Meter
+        key: meter_id
+        attributes: [meter_id, service_point_id, collector_id, install_date, comms_module_type]
+      - name: IntervalRead
+        key: read_id
+        attributes: [read_id, meter_id, read_ts, kwh, read_source, quality_flag]
+    metrics:
+      - { name: estimated_read_share, label: Estimated read share, definition: Share of reads used for billing that were estimated rather than actual., grain: billing run }
+      - { name: meter_comms_silence_days, label: Meter communication silence, definition: Days since a meter last reported to the head-end., grain: meter }
+      - { name: collector_failure_concentration, label: Collector failure concentration, definition: Share of non-communicating meters attributable to a single collector., grain: collector }
+    controls: [meter-data-access, pii-minimisation, retention-billing]
+    patterns: [certified-dashboard, self-serve-exploration, operational-activation]
+    freshness: Daily by 04:00
+    qualityScore: 92
+    costToServeUsdPerMonth: 620
+    platformProfileKey: databricks
+    value:
+      statement: Reduce estimated reads in the monthly billing run below 2%
+      baseline: 6.4
+      unit: percent estimated
+      expectedChange: -4.4
+      method: Billing-run composition report, monthly
+      date: '2027-01-31'
+      realised: true
+      measured: 2.1
+    telemetry: { consumers: 28, queries30d: 640, sessions30d: 210, daysSinceLastUse: 2, freshnessBreaches30d: 1 }
+
+  # --- Network & Grid Assets ------------------------------------------------
+  - key: transformer-health
+    name: Transformer Health
+    domainKey: network-grid-assets
+    archetype: ENTITY_MASTER
+    tier: CONSUMER_ALIGNED
+    description: Condition, loading and replacement priority for distribution transformers.
+    persona: Asset Strategy Engineer
+    decision: Which transformers to replace in next year's capital programme
+    cadence: Quarterly
+    workaround: Asset register joined to loading estimates in a long-lived spreadsheet
+    consequence: Capital goes to assets that are old rather than assets that are failing.
+    questions:
+      - Which transformers are loaded beyond nameplate more than 5% of the time?
+      - Which have both high loading and an ageing condition score?
+      - How many customers would an unplanned failure affect for each candidate?
+    sources:
+      - { name: Asset register, system: GIS }
+      - { name: Loading telemetry, system: SCADA }
+    entities:
+      - name: Transformer
+        key: transformer_id
+        attributes: [transformer_id, feeder_id, nameplate_kva, install_year, condition_score]
+      - name: ServicePoint
+        key: service_point_id
+        attributes: [service_point_id, transformer_id, premise_id, connection_type]
+    metrics:
+      - { name: transformer_overload_hours, label: Transformer overload hours, definition: Hours per year loaded above nameplate rating., grain: transformer }
+      - { name: transformer_condition_index, label: Transformer condition index, definition: Composite condition score from age, loading history and inspection results., grain: transformer }
+      - { name: customers_exposed_per_asset, label: Customers exposed per asset, definition: Customers downstream of a single transformer., grain: transformer }
+    controls: [reg-reporting-reliability, residency]
+    patterns: [certified-dashboard, self-serve-exploration, ml-feature]
+    freshness: Weekly, Monday 06:00
+    qualityScore: 87
+    costToServeUsdPerMonth: 450
+    platformProfileKey: databricks
+    value:
+      statement: Shift replacement spend towards assets with genuine failure risk
+      baseline: 38
+      unit: percent of spend on high-risk assets
+      expectedChange: 30
+      method: Capital programme composition review against realised failures
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 12, queries30d: 150, sessions30d: 70, daysSinceLastUse: 9, freshnessBreaches30d: 0 }
+
+  # --- DER & Programs -------------------------------------------------------
+  - key: der-enrolment-and-performance
+    name: DER Enrolment & Performance
+    domainKey: der-programs
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Who is enrolled in which demand-side programme, and whether the programme delivered the load reduction it promised.
+    persona: DER Programme Manager
+    decision: Which programmes to expand, reprice or close at the next review
+    cadence: Monthly
+    workaround: Enrolment lists from the programme vendor reconciled to interval data by hand
+    consequence: Programmes are renewed on enrolment counts rather than on delivered load reduction.
+    questions:
+      - How many customers are actively enrolled in each programme this month?
+      - What load reduction did each programme actually deliver during called events?
+      - Which enrolled customers have never responded to an event?
+    sources:
+      - { name: Programme enrolments, system: DERMS }
+      - { name: Interval reads, system: MDM }
+    entities:
+      - name: ProgramEnrolment
+        key: enrolment_id
+        attributes: [enrolment_id, customer_id, program_code, enrolled_at, status]
+      - name: DispatchEvent
+        key: dispatch_event_id
+        attributes: [dispatch_event_id, program_code, called_at, duration_minutes, target_mw]
+    metrics:
+      - { name: active_program_enrolments, label: Active programme enrolments, definition: Customers with an active enrolment in a demand-side programme., grain: enrolment }
+      - { name: delivered_load_reduction_mw, label: Delivered load reduction, definition: Measured megawatt reduction during called dispatch events., grain: dispatch event }
+      - { name: non_responding_enrolments, label: Non-responding enrolments, definition: Enrolments with no measurable response across all events in the period., grain: enrolment }
+    controls: [consent-marketing, meter-data-access, pii-minimisation, residency]
+    patterns: [certified-dashboard, self-serve-exploration, api-embedded]
+    freshness: Daily by 08:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 380
+    platformProfileKey: snowflake
+    value:
+      statement: Retire programmes that deliver under 40% of their contracted reduction
+      baseline: 0
+      unit: programmes reviewed on measured delivery
+      expectedChange: 6
+      method: Programme review board decisions minuted against this product
+      date: '2027-04-30'
+      realised: false
+    telemetry: { consumers: 19, queries30d: 290, sessions30d: 110, daysSinceLastUse: 4, freshnessBreaches30d: 0 }
+
+  # --- Field & Work Management ----------------------------------------------
+  - key: field-work-completion
+    name: Field Work Completion
+    domainKey: field-work-management
+    archetype: EVENT_STREAM
+    tier: SOURCE_ALIGNED
+    description: Work orders from raise to close, with truck rolls, repeat visits and appointment adherence.
+    persona: Field Operations Scheduler
+    decision: Which work types to re-route or re-skill to cut repeat visits next month
+    cadence: Weekly
+    workaround: Work management exports summarised by a scheduler each Monday
+    consequence: Crews travel twice for work that one correctly equipped visit would have closed.
+    questions:
+      - Which work types most often need a second visit?
+      - How many appointments were missed against the committed window?
+      - Which crews close work first time most reliably?
+    sources:
+      - { name: Work order extract, system: Work management }
+      - { name: Crew roster, system: Scheduling }
+    entities:
+      - name: WorkOrder
+        key: work_order_id
+        attributes: [work_order_id, premise_id, work_type, raised_at, closed_at, visit_sequence]
+      - name: Crew
+        key: crew_id
+        attributes: [crew_id, depot, skill_set, shift_pattern]
+    metrics:
+      - { name: first_visit_close_rate, label: First visit close rate, definition: Share of work orders closed on the first attendance., grain: work order }
+      - { name: repeat_visit_count, label: Repeat visits, definition: Additional attendances beyond the first for a single work order., grain: work order }
+      - { name: appointment_window_adherence, label: Appointment window adherence, definition: Share of appointments attended inside the committed window., grain: appointment }
+    controls: [pii-minimisation, retention-billing, residency]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 07:30
+    qualityScore: 85
+    costToServeUsdPerMonth: 290
+    platformProfileKey: on-prem
+    value:
+      statement: Raise first-visit close rate from 71% to 85%
+      baseline: 71
+      unit: percent closed first visit
+      expectedChange: 14
+      method: Work management close-code analysis, monthly
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 24, queries30d: 380, sessions30d: 160, daysSinceLastUse: 2, freshnessBreaches30d: 2 }

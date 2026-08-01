@@ -42,6 +42,7 @@ model Workspace {
   agentActions        AgentAction[]
   maturityAssessments MaturityAssessment[]
   agentSettings       AgentSetting[]
+  modelAssignments    ModelAssignment[]
 }
 
 model Domain {
@@ -598,6 +599,23 @@ model AgentSetting {
   @@unique([workspaceId, agentId])
 }
 
+/// Which model backs each autonomy level in a workspace.
+///
+/// A model choice changes what an agent is good at, never what it may do. There is no level and
+/// no model that clears a gate, commits a version or publishes — see AGENT_FORBIDDEN_ACTIONS.
+model ModelAssignment {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  autonomyLevel String
+  modelId       String
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, autonomyLevel])
+}
+
 /// Append-only record of one agent invocation and its human disposition.
 model AgentAction {
   id                    String    @id @default(cuid())
@@ -608,7 +626,11 @@ model AgentAction {
   trigger               String
   scopeJson             String    @default("[]")
   inputHash             String
+  /// The model that actually produced this output. `local-heuristic` when no key is configured.
   model                 String    @default("none")
+  /// The model the workspace had assigned to this agent's autonomy level at invocation time.
+  /// Recorded separately so the log never implies a model ran that did not.
+  configuredModel       String    @default("")
   promptTokens          Int       @default(0)
   completionTokens      Int       @default(0)
   estimatedCostUsd      Float     @default(0)

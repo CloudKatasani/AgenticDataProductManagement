@@ -203,3 +203,230 @@ seedProducts:
     platformProfileKey: on-prem
     value: { statement: Halve line stoppages caused by material shortage, baseline: 22, unit: stoppages per quarter, expectedChange: -11, method: Stoppage reason codes from the MES, date: '2027-04-30', realised: false }
     telemetry: { consumers: 11, queries30d: 130, sessions30d: 55, daysSinceLastUse: 100, freshnessBreaches30d: 3 }
+
+  - key: maintenance-effectiveness
+    name: Maintenance Effectiveness
+    domainKey: maintenance
+    archetype: METRIC_KPI
+    tier: CONSUMER_ALIGNED
+    description: Planned versus reactive maintenance, with mean time between failures by asset class.
+    persona: Maintenance Manager
+    decision: Which assets to move onto a condition-based maintenance schedule
+    cadence: Monthly
+    workaround: Work order exports summarised in a maintenance spreadsheet each month
+    consequence: Preventive maintenance is done on a calendar while failures happen on a different one.
+    questions:
+      - Which asset classes have the shortest mean time between failures?
+      - What share of maintenance hours are reactive rather than planned?
+      - Which planned tasks are consistently completed late or skipped?
+    sources:
+      - { name: Maintenance work orders, system: CMMS }
+      - { name: Asset register, system: Asset management }
+    entities:
+      - name: MaintenanceOrder
+        key: maintenance_order_id
+        attributes: [maintenance_order_id, asset_id, order_type, raised_at, completed_at, labour_hours]
+      - name: Asset
+        key: asset_id
+        attributes: [asset_id, asset_class, line_id, commissioned_year, criticality]
+    metrics:
+      - { name: mean_time_between_failures, label: Mean time between failures, definition: Average operating hours between unplanned failures., grain: asset }
+      - { name: reactive_maintenance_share, label: Reactive maintenance share, definition: Reactive labour hours as a share of total maintenance hours., grain: asset class }
+      - { name: planned_task_completion_rate, label: Planned task completion rate, definition: Share of planned maintenance tasks completed within window., grain: task }
+    controls: [retention-production, worker-privacy, ehs-reporting, residency]
+    patterns: [certified-dashboard, self-serve-exploration, operational-activation]
+    freshness: Daily by 06:00
+    qualityScore: 90
+    costToServeUsdPerMonth: 430
+    platformProfileKey: lakehouse
+    value:
+      statement: Shift maintenance mix from 58% reactive to under 30%
+      baseline: 58
+      unit: percent reactive hours
+      expectedChange: -28
+      method: CMMS labour hour classification, monthly
+      date: '2027-05-31'
+      realised: false
+    telemetry: { consumers: 23, queries30d: 390, sessions30d: 145, daysSinceLastUse: 2, freshnessBreaches30d: 0 }
+
+  - key: warehouse-stock-accuracy
+    name: Warehouse Stock Accuracy
+    domainKey: inventory-warehouse
+    archetype: ENTITY_MASTER
+    tier: SOURCE_ALIGNED
+    description: System stock against counted stock by location, with adjustment reasons and ageing.
+    persona: Warehouse Operations Manager
+    decision: Which locations to cycle-count more often and which process to fix
+    cadence: Weekly
+    workaround: Cycle count results typed into a spreadsheet and compared manually
+    consequence: Production is stopped by a shortage of material the system says is on hand.
+    questions:
+      - Which storage locations have the largest count variance?
+      - Which adjustment reasons account for most of the variance value?
+      - How much stock has not moved in over 180 days?
+    sources:
+      - { name: Stock ledger, system: ERP }
+      - { name: Cycle count results, system: WMS }
+    entities:
+      - name: StockPosition
+        key: stock_position_id
+        attributes: [stock_position_id, material_code, location_id, system_quantity, counted_quantity, last_movement_at]
+      - name: StockAdjustment
+        key: adjustment_id
+        attributes: [adjustment_id, stock_position_id, reason_code, quantity_delta, adjusted_at]
+    metrics:
+      - { name: stock_count_variance, label: Stock count variance, definition: Absolute difference between system and counted quantity., grain: location }
+      - { name: adjustment_value_by_reason, label: Adjustment value by reason, definition: Value of stock adjustments grouped by reason code., grain: reason }
+      - { name: slow_moving_stock_value, label: Slow-moving stock value, definition: Value of stock with no movement in 180 days., grain: material }
+    controls: [batch-traceability, recall-readiness, retention-production, supplier-confidentiality]
+    patterns: [certified-dashboard, operational-activation, bulk-extract]
+    freshness: Daily by 05:00
+    qualityScore: 89
+    costToServeUsdPerMonth: 360
+    platformProfileKey: lakehouse
+    value:
+      statement: Raise stock record accuracy from 91% to 98%
+      baseline: 91
+      unit: percent accurate
+      expectedChange: 7
+      method: Cycle count variance reporting, monthly
+      date: '2027-04-30'
+      realised: true
+      measured: 97.2
+    telemetry: { consumers: 26, queries30d: 480, sessions30d: 170, daysSinceLastUse: 1, freshnessBreaches30d: 1 }
+
+  - key: production-plan-adherence
+    name: Production Plan Adherence
+    domainKey: planning
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Planned versus produced by line and period, with the reasons the plan moved.
+    persona: Production Planner
+    decision: Which lines to replan and which constraint to relieve next
+    cadence: Weekly
+    workaround: Plan and actual compared in a spreadsheet rebuilt every Monday
+    consequence: The plan is treated as fiction and everyone schedules around it informally.
+    questions:
+      - Which lines adhere least to the published plan?
+      - What are the leading reasons for plan changes within the frozen period?
+      - How often does a material shortage drive a replan?
+    sources:
+      - { name: Production plan, system: APS }
+      - { name: Production confirmations, system: MES }
+    entities:
+      - name: PlanLine
+        key: plan_line_id
+        attributes: [plan_line_id, line_id, material_code, planned_quantity, planned_date, revision]
+      - name: ProductionConfirmation
+        key: confirmation_id
+        attributes: [confirmation_id, plan_line_id, produced_quantity, confirmed_at, variance_reason]
+    metrics:
+      - { name: plan_adherence_rate, label: Plan adherence rate, definition: Produced quantity as a share of planned quantity within the period., grain: line }
+      - { name: frozen_period_changes, label: Frozen period changes, definition: Plan revisions made inside the frozen horizon., grain: plan line }
+      - { name: shortage_driven_replans, label: Shortage-driven replans, definition: Replans attributed to a material shortage., grain: plan line }
+    controls: [retention-production, supplier-confidentiality, export-control, residency]
+    patterns: [certified-dashboard, self-serve-exploration]
+    freshness: Daily by 04:00
+    qualityScore: 86
+    costToServeUsdPerMonth: 320
+    platformProfileKey: on-prem
+    value:
+      statement: Raise plan adherence from 78% to 92%
+      baseline: 78
+      unit: percent adherence
+      expectedChange: 14
+      method: Weekly plan versus actual reporting
+      date: '2027-06-30'
+      realised: false
+    telemetry: { consumers: 18, queries30d: 280, sessions30d: 100, daysSinceLastUse: 3, freshnessBreaches30d: 2 }
+
+  - key: safety-observations
+    name: Safety Observations
+    domainKey: safety-ehs
+    archetype: EVENT_STREAM
+    tier: CONSUMER_ALIGNED
+    description: Observations, near misses and recordable incidents by area, with corrective action status.
+    persona: EHS Manager
+    decision: Which area to target with the next safety intervention
+    cadence: Weekly
+    workaround: Paper observation cards keyed in weekly and counted by area
+    consequence: Corrective actions are raised and never closed, and the same hazard injures someone.
+    questions:
+      - Which areas generate most observations without a closed corrective action?
+      - How long do corrective actions stay open by severity?
+      - Which hazard categories recur after being closed?
+    sources:
+      - { name: Observation cards, system: EHS platform }
+      - { name: Corrective actions, system: EHS platform }
+    entities:
+      - name: SafetyObservation
+        key: observation_id
+        attributes: [observation_id, area_id, hazard_category, severity, observed_at, reporter_role]
+      - name: CorrectiveAction
+        key: corrective_action_id
+        attributes: [corrective_action_id, observation_id, owner_role, due_date, closed_at]
+    metrics:
+      - { name: open_corrective_actions, label: Open corrective actions, definition: Corrective actions past due date and not closed., grain: area }
+      - { name: corrective_action_age_days, label: Corrective action age, definition: Days a corrective action has been open., grain: corrective action }
+      - { name: recurring_hazard_rate, label: Recurring hazard rate, definition: Hazards reobserved in an area after a corrective action closed., grain: area }
+    controls: [ehs-reporting, worker-privacy, retention-production, residency]
+    patterns: [certified-dashboard, operational-activation]
+    freshness: Daily by 07:00
+    qualityScore: 92
+    costToServeUsdPerMonth: 270
+    platformProfileKey: on-prem
+    value:
+      statement: Close every overdue corrective action and keep the backlog at zero
+      baseline: 148
+      unit: overdue corrective actions
+      expectedChange: -148
+      method: EHS platform backlog report, weekly
+      date: '2027-02-28'
+      realised: true
+      measured: 6
+    telemetry: { consumers: 31, queries30d: 420, sessions30d: 160, daysSinceLastUse: 1, freshnessBreaches30d: 0 }
+
+  - key: product-cost-to-serve
+    name: Product Cost to Serve
+    domainKey: cost-margin
+    archetype: METRIC_KPI
+    tier: AGGREGATE
+    description: Fully loaded cost per unit by product and plant, with the variance drivers separated.
+    persona: Plant Controller
+    decision: Which products to reprice, re-source or discontinue
+    cadence: Monthly
+    workaround: Standard costs held in ERP and actuals reconciled in a finance workbook
+    consequence: Products are sold below true cost for a year before anyone notices.
+    questions:
+      - Which products have the largest gap between standard and actual cost?
+      - How much of the variance is labour, material or energy?
+      - Which plants produce the same product at materially different cost?
+    sources:
+      - { name: Cost centre actuals, system: ERP }
+      - { name: Production volumes, system: MES }
+    entities:
+      - name: ProductCost
+        key: product_cost_id
+        attributes: [product_cost_id, material_code, plant_id, period, standard_cost, actual_cost]
+      - name: CostComponent
+        key: cost_component_id
+        attributes: [cost_component_id, product_cost_id, component_type, amount]
+    metrics:
+      - { name: cost_variance_per_unit, label: Cost variance per unit, definition: Actual less standard cost per unit produced., grain: material }
+      - { name: variance_by_component, label: Variance by component, definition: Cost variance split by labour, material and energy., grain: component }
+      - { name: cross_plant_cost_spread, label: Cross-plant cost spread, definition: Difference in actual unit cost for the same product across plants., grain: material }
+    controls: [supplier-confidentiality, retention-production, export-control, residency]
+    patterns: [certified-dashboard, self-serve-exploration, bulk-extract]
+    freshness: Monthly, by working day 4
+    qualityScore: 88
+    costToServeUsdPerMonth: 490
+    platformProfileKey: lakehouse
+    value:
+      statement: Identify and act on products sold below fully loaded cost
+      baseline: 0
+      unit: products repriced or discontinued on cost evidence
+      expectedChange: 14
+      method: Product review board decisions citing this product
+      date: '2027-07-31'
+      realised: false
+    telemetry: { consumers: 12, queries30d: 170, sessions30d: 65, daysSinceLastUse: 9, freshnessBreaches30d: 0 }
