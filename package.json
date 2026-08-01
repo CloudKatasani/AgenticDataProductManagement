@@ -16,8 +16,12 @@
     "db:generate": "prisma generate",
     "db:seed": "prisma db push --skip-generate --accept-data-loss && tsx prisma/seed.ts",
     "db:reset": "rm -f prisma/dev.db && pnpm db:seed",
+    "db:pg:prepare": "tsx scripts/prepare-postgres.ts",
+    "db:pg:setup": "pnpm db:pg:prepare && prisma db push --schema prisma/schema.postgres.prisma --skip-generate --accept-data-loss && prisma generate --schema prisma/schema.postgres.prisma",
+    "db:seed:pg": "pnpm db:pg:setup && tsx prisma/seed.ts",
+    "monitor": "tsx scripts/monitor.ts",
     "pack:validate": "tsx scripts/validate-packs.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/ensure-env.mjs && prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

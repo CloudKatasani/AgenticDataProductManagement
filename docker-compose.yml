@@ -1,0 +1,37 @@
+# Optional Postgres for ADPM.
+#
+# The default local run needs none of this: SQLite is the zero-config store and `pnpm db:seed`
+# writes prisma/dev.db. Bring this up only when you want the Postgres path — a shared demo box,
+# a concurrency test, or a rehearsal of a deployment that will not use SQLite.
+#
+#   docker compose up -d
+#   cp .env.example .env            # then set DATABASE_URL to the postgres URL below
+#   pnpm db:pg:setup                # derive the Postgres schema, push it, regenerate the client
+#   pnpm db:seed:pg                 # seed through the real lifecycle engine
+#
+# Nothing here reaches the internet beyond pulling the image, and no application secret lives in
+# this file: the credentials below are local-only development credentials for a container bound to
+# 127.0.0.1. Do not reuse them anywhere that is reachable by anyone else.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: adpm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: adpm
+      POSTGRES_PASSWORD: adpm-local-development
+      POSTGRES_DB: adpm
+    ports:
+      # Bound to loopback on purpose — this database is not for anyone but this laptop.
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - adpm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U adpm -d adpm']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  adpm-postgres-data:

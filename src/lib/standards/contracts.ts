@@ -1,7 +1,15 @@
 import type { Charter, DataContract, MarketplaceListing } from '@/lib/artifacts/registry'
 
-/** ODCS v3.0.x. Version pinned in STANDARDS_ADAPTERS and asserted in tests/standards.test.ts. */
+/**
+ * ODCS. Verified on 2026-08-01 against `schema/odcs-json-schema-latest.json` in
+ * bitol-io/open-data-contract-standard: `v3.0.2` is an accepted apiVersion enum value (the
+ * published default is v3.1.0), and the five required root fields are apiVersion, kind, id,
+ * version and status — all emitted below.
+ */
 export const ODCS_VERSION = 'v3.0.2'
+
+/** The root fields the published schema marks as required. Asserted in tests/standards.test.ts. */
+export const ODCS_REQUIRED_ROOT_FIELDS = ['apiVersion', 'kind', 'id', 'version', 'status'] as const
 
 export interface OdcsContract {
   apiVersion: string
@@ -22,7 +30,7 @@ export interface OdcsContract {
     }[]
   }[]
   slaProperties: { property: string; value: number | string; unit?: string }[]
-  support: { channel: string; url: string }[]
+  support: { channel: string; url: string; tool?: string }[]
   customProperties: { property: string; value: string | number }[]
 }
 
@@ -59,7 +67,17 @@ export function toOdcs(params: {
       { property: 'availability', value: params.contract.slas.availabilityPct, unit: 'percent' },
       { property: 'maxNullRate', value: params.contract.slas.maxNullRatePct, unit: 'percent' },
     ],
-    support: [{ channel: params.contract.support.channel || 'owner', url: 'mailto:' }],
+    support: [
+      {
+        channel: params.contract.support.channel || 'owner',
+        // ODCS expects a reachable URL. A chat handle becomes an internal chat URI; anything else
+        // is treated as an address. Nothing is invented when the contract records no channel.
+        url: params.contract.support.channel.startsWith('#')
+          ? `chat://${params.contract.support.channel.slice(1)}`
+          : `contact:${params.contract.support.owner || 'unassigned'}`,
+        tool: 'other',
+      },
+    ],
     customProperties: [
       { property: 'versioningPolicy', value: params.contract.versioning.policy },
       { property: 'deprecationNoticeDays', value: params.contract.versioning.deprecationNoticeDays },

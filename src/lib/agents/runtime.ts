@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { assertRole } from '@/lib/auth/authorise'
+import { PRACTITIONER_ROLES } from '@/lib/domain/roles'
 import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { contentHash } from '@/lib/hash'
 import { getAgentCredentials } from '@/lib/secrets'
@@ -89,6 +91,17 @@ async function resolveProvider(): Promise<AgentProvider> {
 export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentResult> {
   const agent = getAgent(input.agentId)
   if (!agent) throw new AgentError(`Unknown agent: ${input.agentId}`)
+
+  // Invariant 10, at the engine rather than the route: invoking an agent spends workspace budget
+  // and puts product content in front of a model, so it is a mutation and is authorised like one.
+  // Enforcing it here means the scheduled runner (scripts/monitor.ts) is bound by the same rule
+  // as the button in the studio.
+  await assertRole(
+    input.userId,
+    input.workspaceId,
+    PRACTITIONER_ROLES,
+    `Invoking the ${agent.name} agent`,
+  )
 
   const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: input.workspaceId } })
   if (!workspace.agentsEnabled) {
@@ -405,6 +418,13 @@ export async function dispositionProposal(input: DispositionInput): Promise<void
   if (proposal.state !== 'PENDING') {
     throw new AgentError('This proposal has already been dispositioned.')
   }
+  // Guardrail 2 is only worth anything if the human doing the accepting is entitled to.
+  await assertRole(
+    input.userId,
+    proposal.product.workspaceId,
+    PRACTITIONER_ROLES,
+    'Dispositioning an agent proposal',
+  )
 
   const state = input.action === 'ACCEPT' ? 'ACCEPTED' : input.action === 'EDIT_ACCEPT' ? 'EDITED' : 'REJECTED'
 
@@ -473,6 +493,12 @@ export async function acceptCriticComment(input: {
   })
   const value = JSON.parse(proposal.proposedValueJson) as { comment?: string }
   if (!value.comment) throw new AgentError('This proposal is not a review comment.')
+  await assertRole(
+    input.userId,
+    proposal.product.workspaceId,
+    PRACTITIONER_ROLES,
+    'Accepting a critic comment',
+  )
 
   const comment = await prisma.$transaction(async (tx) => {
     const created = await tx.comment.create({
