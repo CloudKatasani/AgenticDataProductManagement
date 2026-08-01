@@ -166,6 +166,63 @@ export function ArtifactEditor({
   )
 }
 
+/**
+ * One proposal, one disposition form, one action state — so a refusal (wrong role, already
+ * dispositioned) lands on the proposal it belongs to instead of taking down the panel.
+ */
+function ProposalDisposition({ proposal }: { proposal: StageView['proposals'][number] }) {
+  const [result, formAction, pending] = useActionState<Result | undefined, FormData>(
+    dispositionProposalAction,
+    undefined,
+  )
+  return (
+    <div className="agent-proposed rounded-md p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="agent">{proposal.agentId}</Badge>
+        <code className="text-xs text-ink-600">{proposal.fieldPath}</code>
+        <Badge tone="warn">Not yet reviewed</Badge>
+      </div>
+      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-2 text-xs text-ink-800">
+        {proposal.preview}
+      </pre>
+      {proposal.rationale ? (
+        <p className="mt-1 text-xs italic text-ink-600">{proposal.rationale}</p>
+      ) : null}
+      <form action={formAction} className="mt-2 flex flex-wrap items-end gap-2">
+        <input type="hidden" name="proposalId" value={proposal.id} />
+        {!proposal.isComment ? (
+          <div className="flex-1">
+            <label htmlFor={`edit-${proposal.id}`} className="mb-1 block text-xs text-ink-600">
+              Edit before accepting (YAML)
+            </label>
+            <textarea
+              id={`edit-${proposal.id}`}
+              name="editedValue"
+              rows={3}
+              className={`${inputClass} font-mono text-xs`}
+              defaultValue={proposal.preview}
+            />
+          </div>
+        ) : null}
+        <div className="flex gap-2">
+          <Button name="action" value="ACCEPT" variant="primary" disabled={pending}>
+            Accept
+          </Button>
+          {!proposal.isComment ? (
+            <Button name="action" value="EDIT_ACCEPT" variant="secondary" disabled={pending}>
+              Edit &amp; accept
+            </Button>
+          ) : null}
+          <Button name="action" value="REJECT" variant="danger" disabled={pending}>
+            Reject
+          </Button>
+        </div>
+      </form>
+      <ResultBanner result={result} />
+    </div>
+  )
+}
+
 export function AgentPanel({
   view,
   productId,
@@ -224,49 +281,7 @@ export function AgentPanel({
             <p className="text-sm text-ink-600">No proposals awaiting disposition.</p>
           ) : (
             pendingProposals.map((proposal) => (
-              <div key={proposal.id} className="agent-proposed rounded-md p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="agent">{proposal.agentId}</Badge>
-                  <code className="text-xs text-ink-600">{proposal.fieldPath}</code>
-                  <Badge tone="warn">Not yet reviewed</Badge>
-                </div>
-                <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-white/70 p-2 text-xs text-ink-800">
-                  {proposal.preview}
-                </pre>
-                {proposal.rationale ? (
-                  <p className="mt-1 text-xs italic text-ink-600">{proposal.rationale}</p>
-                ) : null}
-                <form action={dispositionProposalAction} className="mt-2 flex flex-wrap items-end gap-2">
-                  <input type="hidden" name="proposalId" value={proposal.id} />
-                  {!proposal.isComment ? (
-                    <div className="flex-1">
-                      <label htmlFor={`edit-${proposal.id}`} className="mb-1 block text-xs text-ink-600">
-                        Edit before accepting (YAML)
-                      </label>
-                      <textarea
-                        id={`edit-${proposal.id}`}
-                        name="editedValue"
-                        rows={3}
-                        className={`${inputClass} font-mono text-xs`}
-                        defaultValue={proposal.preview}
-                      />
-                    </div>
-                  ) : null}
-                  <div className="flex gap-2">
-                    <Button name="action" value="ACCEPT" variant="primary">
-                      Accept
-                    </Button>
-                    {!proposal.isComment ? (
-                      <Button name="action" value="EDIT_ACCEPT" variant="secondary">
-                        Edit &amp; accept
-                      </Button>
-                    ) : null}
-                    <Button name="action" value="REJECT" variant="danger">
-                      Reject
-                    </Button>
-                  </div>
-                </form>
-              </div>
+              <ProposalDisposition key={proposal.id} proposal={proposal} />
             ))
           )}
         </div>

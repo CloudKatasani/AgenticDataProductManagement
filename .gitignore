@@ -8,6 +8,7 @@ dist/
 *.db
 *.db-journal
 prisma/dev.db*
+prisma/schema.postgres.prisma
 playwright-report/
 test-results/
 .vitest/

@@ -146,6 +146,67 @@ describe('agent runtime guardrails', () => {
     ).rejects.toBeInstanceOf(AgentError)
   })
 
+  it('refuses to invoke an agent for a consumer, who holds no authoring role', async () => {
+    // Invariant 10 at the engine: a session is not an entitlement. Invoking an agent spends
+    // workspace budget and puts product content in front of a model, so it is authorised by role.
+    const fixture = await createFixture({ agentsEnabled: true })
+    const product = await createProduct(fixture)
+    await expect(
+      invokeAgent({
+        agentId: 'critic',
+        workspaceId: fixture.workspaceId,
+        productId: product.id,
+        stageNumber: 1,
+        userId: fixture.users.get('DATA_CONSUMER')!,
+        trigger: 'MANUAL',
+      }),
+    ).rejects.toThrow(/requires one of/i)
+  })
+
+  it('refuses to let a consumer disposition a proposal', async () => {
+    const fixture = await createFixture({ agentsEnabled: true })
+    const product = await createProduct(fixture)
+    const artifacts = blueprintArtifacts(fixture)
+    await commit(fixture, product.id, 'decision-register', artifacts['decision-register'])
+    const result = await invokeAgent({
+      agentId: 'critic',
+      workspaceId: fixture.workspaceId,
+      productId: product.id,
+      stageNumber: 1,
+      userId: fixture.users.get('DATA_STEWARD')!,
+      trigger: 'MANUAL',
+    })
+    const proposal = await prisma.agentProposal.findFirstOrThrow({
+      where: { agentActionId: result.actionId },
+    })
+    await expect(
+      dispositionProposal({
+        proposalId: proposal.id,
+        userId: fixture.users.get('DATA_CONSUMER')!,
+        action: 'ACCEPT',
+      }),
+    ).rejects.toThrow(/requires one of/i)
+    // And the proposal is untouched, so the exit criterion still blocks submission.
+    const untouched = await prisma.agentProposal.findUniqueOrThrow({ where: { id: proposal.id } })
+    expect(untouched.state).toBe('PENDING')
+  })
+
+  it('refuses a scheduled run for an agent below L3, whatever the caller asks for', async () => {
+    // The rule scripts/monitor.ts leans on: a SCHEDULE trigger is only ever honoured at L3.
+    const fixture = await createFixture({ agentsEnabled: true })
+    const product = await createProduct(fixture)
+    await expect(
+      invokeAgent({
+        agentId: 'critic',
+        workspaceId: fixture.workspaceId,
+        productId: product.id,
+        stageNumber: 1,
+        userId: fixture.users.get('DATA_STEWARD')!,
+        trigger: 'SCHEDULE',
+      }),
+    ).rejects.toThrow(/L3/)
+  })
+
   it('stops when the workspace agent budget is exhausted', async () => {
     const fixture = await createFixture({ agentsEnabled: true })
     await prisma.workspace.update({

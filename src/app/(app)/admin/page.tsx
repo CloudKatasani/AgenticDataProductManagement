@@ -109,18 +109,29 @@ export default async function AdminPage() {
         <Card>
           <CardHeader
             title="Standards interoperability"
-            description="Each adapter pins a specification version and is covered by a round-trip test."
+            description="Each adapter pins a specification version and is covered by a round-trip or shape test. A pinned, tested mapping is not the same as a certified one — the badge says which you are looking at."
           />
           <CardBody>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-3 text-sm">
               {STANDARDS_ADAPTERS.map((adapter) => (
                 <li key={adapter.key}>
                   <span className="font-medium text-ink-900">{adapter.name}</span>{' '}
                   <Badge tone="info">{adapter.version}</Badge>{' '}
                   <Badge tone={adapter.direction === 'EXPORT_ONLY' ? 'neutral' : 'good'}>
                     {adapter.direction === 'EXPORT_ONLY' ? 'export only' : 'round-trip'}
+                  </Badge>{' '}
+                  <Badge tone={adapter.verification ? 'good' : 'warn'}>
+                    {adapter.verification
+                      ? `checked against the spec ${adapter.verification.checkedOn}`
+                      : 'unverified against the spec'}
                   </Badge>
                   <p className="text-xs text-ink-600">{adapter.note}</p>
+                  {adapter.verification ? (
+                    <p className="mt-1 text-xs text-ink-500">
+                      <span className="font-medium">{adapter.verification.source}</span> —{' '}
+                      {adapter.verification.finding}
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>

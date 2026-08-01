@@ -263,7 +263,10 @@ export async function runAgentAction(_prev: Result | undefined, formData: FormDa
   }
 }
 
-export async function dispositionProposalAction(formData: FormData) {
+export async function dispositionProposalAction(
+  _prev: Result | undefined,
+  formData: FormData,
+): Promise<Result> {
   const session = await requireSession()
   const proposalId = String(formData.get('proposalId') ?? '')
   const action = String(formData.get('action') ?? '') as 'ACCEPT' | 'EDIT_ACCEPT' | 'REJECT'
@@ -273,20 +276,31 @@ export async function dispositionProposalAction(formData: FormData) {
   const proposal = await prisma.agentProposal.findUniqueOrThrow({ where: { id: proposalId } })
   const isComment = 'comment' in (JSON.parse(proposal.proposedValueJson) ?? {})
 
-  if (isComment && action === 'ACCEPT') {
-    await acceptCriticComment({ proposalId, userId: session.userId, note })
-  } else {
-    let editedValue: unknown
-    if (action === 'EDIT_ACCEPT' && editedRaw) {
-      try {
-        editedValue = parseYaml(editedRaw)
-      } catch {
-        editedValue = editedRaw
+  try {
+    if (isComment && action === 'ACCEPT') {
+      await acceptCriticComment({ proposalId, userId: session.userId, note })
+    } else {
+      let editedValue: unknown
+      if (action === 'EDIT_ACCEPT' && editedRaw) {
+        try {
+          editedValue = parseYaml(editedRaw)
+        } catch {
+          editedValue = editedRaw
+        }
       }
+      await dispositionProposal({ proposalId, userId: session.userId, action, editedValue, note })
     }
-    await dispositionProposal({ proposalId, userId: session.userId, action, editedValue, note })
+  } catch (error) {
+    // An authorisation refusal is an answer, not a crash — show it where the decision was made.
+    return { error: error instanceof Error ? error.message : 'That disposition could not be recorded.' }
   }
   refresh(proposal.productId, proposal.stageNumber)
+  return {
+    ok:
+      action === 'REJECT'
+        ? 'Proposal rejected. The agent action is recorded either way.'
+        : 'Proposal accepted. It is now yours: the field carries your name, not the agent’s.',
+  }
 }
 
 const changeRequestSchema = z.object({

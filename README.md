@@ -15,10 +15,14 @@ consumption and retirement.
 ## Five-minute quickstart
 
 ```bash
-pnpm install          # installs dependencies and generates the Prisma client
+pnpm install          # installs dependencies, creates .env, generates the Prisma client
 pnpm db:seed          # creates the SQLite database and seeds 9 workspaces, 27 certified products
 pnpm dev              # http://localhost:3000
 ```
+
+Needs Node 20.11+ and pnpm 10+. **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** covers the rest:
+production build, ports, the optional Postgres path, agent configuration and where secrets live,
+scheduled monitoring, backup and reset, and troubleshooting.
 
 Sign in with any seeded account and the password `adpm`:
 
@@ -104,7 +108,7 @@ would go stale the first time the product changed and nobody would notice.
 | 7 | Grounding purity: no Bronze or Silver reference survives the validator | `lib/lifecycle/stages.ts` (Stage 10) | `tests/criteria.test.ts` |
 | 8 | Evidence over assertion: every certification dimension cites a resolving reference | `lib/lifecycle/stages.ts` (Stage 11) | `tests/criteria.test.ts` |
 | 9 | Value closes the loop: hypothesis at Stage 2, measured at Stage 12 | `lib/lifecycle/stages.ts` | `tests/criteria.test.ts` |
-| 10 | Roles are re-derived server-side on every mutation | `lib/auth/authorise.ts` | `tests/lifecycle.test.ts` |
+| 10 | Roles are re-derived server-side on every mutation, including agent invocation | `lib/auth/authorise.ts`, `lib/agents/runtime.ts` | `tests/lifecycle.test.ts`, `tests/agent-guardrails.test.ts` |
 | 11 | Industry logic lives in packs, never in application code | `packs/*.yaml`, `lib/packs/` | `pnpm pack:validate` |
 
 Quorum and veto arithmetic is a pure function (`evaluateGateOutcome`) so the rules can be read and
@@ -129,6 +133,8 @@ pnpm test:e2e       # playwright, against a running server (see below)
 pnpm pack:validate  # validate every industry pack
 pnpm db:seed        # create and seed the database
 pnpm db:reset       # drop and reseed
+pnpm monitor        # scheduled L3 monitoring run, for cron (see docs/DEPLOYMENT.md §6)
+pnpm db:seed:pg     # the optional Postgres path (docker compose up -d first)
 ```
 
 End-to-end tests expect a built server on port 3111 with the seeded database:
@@ -157,6 +163,11 @@ ceiling and an escalation rule (`src/lib/agents/registry.ts`).
 
 There is deliberately **no level that clears a gate or commits a version**. A workspace setting can
 lower an agent's ceiling; it can never raise it.
+
+Invoking an agent is a mutation — it spends workspace budget and puts product content in front of a
+model — so it is authorised by role server-side in the runtime, not at the route. `pnpm monitor` is
+bound by the same rule as the button in the studio, and refuses to start without
+`ADPM_MONITOR_USER` naming the human accountable for the schedule.
 
 **Providers.** Model access sits behind an adapter:
 
@@ -204,21 +215,26 @@ programme is git-diffable outside the application.
 
 ## Standards interoperability
 
-| Standard | Version pinned | Direction |
-|---|---|---|
-| Open Data Contract Standard (ODCS) | v3.0.x | round-trip |
-| Open Data Product Specification (ODPS) | v3.x | export |
-| DCAT / DCAT-AP | DCAT 3 JSON-LD | export |
-| OpenLineage | 2-0-2 run event | export |
-| MetricFlow / dbt semantic manifest | semantic manifest v1 | round-trip |
-| schema.org `Dataset` | schema.org 27.x | export |
-| OpenMetadata / DataHub | listing export shape | export only, no live sync |
+| Standard | Version pinned | Direction | Checked against the published spec? |
+|---|---|---|---|
+| Open Data Contract Standard (ODCS) | v3.0.2 | round-trip | **Yes** — `bitol-io/open-data-contract-standard`, 2026-08-01 |
+| OpenLineage | 2-0-2 run event | export | **Yes** — `OpenLineage/OpenLineage`, 2026-08-01 |
+| Open Data Product Specification (ODPS) | v3.0 | export | No |
+| DCAT / DCAT-AP | DCAT 3 JSON-LD | export | No |
+| MetricFlow / dbt semantic manifest | semantic manifest v1 | round-trip | No |
+| schema.org `Dataset` | schema.org 27.x | export | No |
+| OpenMetadata / DataHub | listing export shape | export only, no live sync | No |
 
-**Be precise about what this claims.** Each adapter pins the version it was written against and is
-covered by a round-trip or shape test in `tests/standards.test.ts`. That means the mapping is stable
-and tested — **not** that it has been certified against a live published specification. The
-specifications evolve; check the pinned version against the current published spec before relying on
-one of these in production. This limitation is repeated in the Admin UI rather than hidden here.
+**Be precise about what this claims.** Every adapter pins the version it was written against and is
+covered by a round-trip or shape test in `tests/standards.test.ts` — the mapping is stable and
+tested. That is a weaker claim than conformance.
+
+Two adapters go further. ODCS and OpenLineage have been read against their published JSON schemas,
+and each carries a `verification` record naming the source, the date and the finding
+(`src/lib/standards/index.ts`); `tests/standards.test.ts` asserts that every root field the ODCS
+schema marks as required is actually emitted. The remaining five say **unverified** in their own
+description, in the Admin UI, and here. Check the pin against the current published spec before
+relying on one of them in production.
 
 ---
 
@@ -248,10 +264,15 @@ than one that claims everything.
   bundled, and inventing one would be dishonest.
 - **The audit bundle is digest-sealed, not cryptographically signed** by an external key holder. The
   bundle says so in its own payload.
-- **Scheduled L3 monitoring runs on demand**, from the Agents tab, rather than from a background
-  scheduler.
-- **Standards adapters are tested against their pinned shapes**, not against a live specification —
-  see above.
+- **Scheduled L3 monitoring is a script you schedule, not a service.** `pnpm monitor` is built to run
+  from cron and refuses to run unattributed, but ADPM ships no daemon of its own — there is nothing
+  in-process watching the clock.
+- **Five of the seven standards adapters are unverified** against their published specifications.
+  ODCS and OpenLineage have been checked and carry a verification record; the others say so.
+- **The Postgres path is written but was never executed.** `docker-compose.yml` and the schema
+  derivation exist and the derivation is exercised, but no Docker daemon was available in the
+  environment this was built in, so `pnpm db:seed:pg` has not been run against a live Postgres.
+  SQLite is the tested path.
 
 ---
 

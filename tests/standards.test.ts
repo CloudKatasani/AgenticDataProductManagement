@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   METRICFLOW_VERSION,
+  ODCS_REQUIRED_ROOT_FIELDS,
   ODCS_VERSION,
   OPENLINEAGE_VERSION,
   STANDARDS_ADAPTERS,
@@ -80,10 +81,34 @@ describe('standards adapters', () => {
     for (const adapter of STANDARDS_ADAPTERS) {
       expect(adapter.version).toBeTruthy()
       expect(adapter.note).toBeTruthy()
+      // An adapter either carries a real verification record, or says plainly it has none.
+      if (adapter.verification) {
+        expect(adapter.verification.source).toBeTruthy()
+        expect(adapter.verification.finding).toBeTruthy()
+        expect(adapter.verification.checkedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      } else {
+        expect(adapter.note.toLowerCase()).toContain('unverified')
+      }
     }
     expect(ODCS_VERSION).toMatch(/^v3\./)
     expect(METRICFLOW_VERSION).toBe('semantic-manifest-v1')
     expect(OPENLINEAGE_VERSION).toBe('2-0-2')
+  })
+
+  it('emits every root field the published ODCS schema marks as required', () => {
+    const odcs = toOdcs({
+      id: 'arrears-and-protection',
+      name: 'Arrears & Customer Protection',
+      version: '1.0.0',
+      status: 'published',
+      purpose: 'Unblock the weekly collections decision',
+      contract,
+    })
+    for (const field of ODCS_REQUIRED_ROOT_FIELDS) {
+      expect(odcs[field as keyof typeof odcs], field).toBeTruthy()
+    }
+    // A support entry needs a reachable URL, not a placeholder.
+    expect(odcs.support[0]?.url).toMatch(/^(chat|contact):/)
   })
 
   it('round-trips a data contract through ODCS without losing meaning', () => {
