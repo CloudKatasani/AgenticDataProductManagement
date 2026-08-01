@@ -43,6 +43,7 @@ model Workspace {
   maturityAssessments MaturityAssessment[]
   agentSettings       AgentSetting[]
   modelAssignments    ModelAssignment[]
+  metadataImports     ExternalMetadataImport[]
 }
 
 model Domain {
@@ -228,6 +229,7 @@ model DataProduct {
   agentActions    AgentAction[]
   agentProposals  AgentProposal[]
   prioritisation  PrioritisationOverride[]
+  metadataImports ExternalMetadataImport[]
 
   @@unique([workspaceId, key])
   @@index([workspaceId, status])
@@ -597,6 +599,31 @@ model AgentSetting {
   workspace Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([workspaceId, agentId])
+}
+
+/// One import of metadata from an external modelling or catalogue tool.
+///
+/// Append-only, content-hashed, and never artifact content: an import is *context* an agent may
+/// read so its proposals are informed rather than invented. Proposals derived from it still
+/// require a human disposition (invariant 5), and an external tool's own "certified" state is
+/// carried through verbatim, never mapped onto ADPM's certification (invariant 8).
+model ExternalMetadataImport {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  productId     String
+  connectorKey  String
+  fileName      String   @default("")
+  contentHash   String
+  payloadJson   String
+  summary       String   @default("")
+  importedById  String?
+  createdAt     DateTime @default(now())
+  archivedAt    DateTime?
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id])
+  product   DataProduct @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
 }
 
 /// Which model backs each autonomy level in a workspace.

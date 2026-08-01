@@ -1,12 +1,23 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import {
   importAttributeWorkbookAction,
+  importExternalMetadataAction,
   importProfileCsvAction,
   type Result,
 } from '@/app/(app)/products/actions'
-import { Button, Card, CardBody, CardHeader, ErrorText, Field, LinkButton, inputClass } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  ErrorText,
+  Field,
+  LinkButton,
+  inputClass,
+} from '@/components/ui'
 
 function Banner({ result }: { result: Result | undefined }) {
   if (!result) return null
@@ -119,6 +130,120 @@ export function CsvProfiler({ productId }: { productId: string }) {
           </Button>
           <Banner result={result} />
         </form>
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Stages 3, 4 and 6: bring in what your modelling and catalogue tools already know, so the
+ * agents chartered for those stages have context before they propose anything.
+ */
+export function ExternalMetadataImporter({
+  productId,
+  connectors,
+  existing,
+}: {
+  productId: string
+  connectors: {
+    key: string
+    name: string
+    vendor: string
+    category: string
+    fileTypes: string[]
+    howToExport: string
+    note: string
+    verified: boolean
+  }[]
+  existing: { id: string; connectorName: string; summary: string; fileName: string; importedOn: string }[]
+}) {
+  const [result, formAction, pending] = useActionState<Result | undefined, FormData>(
+    importExternalMetadataAction,
+    undefined,
+  )
+  const [connectorKey, setConnectorKey] = useState(connectors[0]?.key ?? '')
+  const connector = connectors.find((c) => c.key === connectorKey)
+
+  return (
+    <Card>
+      <CardHeader
+        title="Import from your modelling and catalogue tools"
+        description="erwin, Collibra, Alation or any tool that can emit the canonical format. What you import becomes context the chartered agents read before they propose — it never becomes artifact content, and nothing is committed."
+      />
+      <CardBody>
+        <form action={formAction}>
+          <input type="hidden" name="productId" value={productId} />
+          <Field label="Tool" htmlFor="connector-key" required>
+            <select
+              id="connector-key"
+              name="connectorKey"
+              className={inputClass}
+              value={connectorKey}
+              onChange={(event) => setConnectorKey(event.target.value)}
+              required
+            >
+              {connectors.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.name} — {c.vendor}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {connector ? (
+            <div className="mb-3 rounded-md border border-ink-200 bg-ink-50 px-3 py-2 text-xs text-ink-700">
+              <p>
+                <strong>How to export:</strong> {connector.howToExport}
+              </p>
+              <p className="mt-1">
+                <Badge tone={connector.verified ? 'good' : 'warn'}>
+                  {connector.verified ? 'format fully specified' : 'unverified against a live instance'}
+                </Badge>{' '}
+                {connector.note}
+              </p>
+            </div>
+          ) : null}
+          <Field
+            label="Export file"
+            htmlFor="metadata-file"
+            hint={connector ? `Accepts ${connector.fileTypes.join(', ')}` : undefined}
+            required
+          >
+            <input
+              id="metadata-file"
+              name="file"
+              type="file"
+              accept={connector?.fileTypes.join(',')}
+              required
+              className={inputClass}
+            />
+          </Field>
+          <Button disabled={pending} variant="secondary">
+            {pending ? 'Importing…' : 'Import metadata'}
+          </Button>
+          <Banner result={result} />
+        </form>
+
+        {existing.length > 0 ? (
+          <div className="mt-4 border-t border-ink-200 pt-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-500">
+              Imported for this product
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-ink-700">
+              {existing.map((item) => (
+                <li key={item.id}>
+                  <span className="font-medium">{item.connectorName}</span> — {item.summary}{' '}
+                  <span className="text-ink-500">
+                    ({item.fileName || 'no filename'}, {item.importedOn})
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-ink-500">
+              Re-importing supersedes an earlier export from the same tool rather than duplicating
+              it. Imports are append-only and appear in the audit trail.
+            </p>
+          </div>
+        ) : null}
       </CardBody>
     </Card>
   )

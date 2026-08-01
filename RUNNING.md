@@ -184,9 +184,13 @@ user's unmet need becoming a governed data product.
 9. **See the leadership view.** Sign in as **`cdo@adpm.local`** → **Portfolio** for
    the pipeline, prioritisation, cost, value realisation and maturity assessment.
 
-Two stages have an import surface, because a web form is the wrong tool for the job:
+Several stages have an import surface, because a web form is the wrong tool for the job:
 **Stage 3** profiles an uploaded CSV extract locally (no warehouse connection
-anywhere in ADPM), and **Stage 5** round-trips the attribute register through Excel.
+anywhere in ADPM), **Stage 5** round-trips the attribute register through Excel, and
+**Stages 3, 4 and 6** accept an export from erwin, Collibra or Alation so the agents
+chartered for those stages have your existing modelling and catalogue context before
+they propose anything. Imported metadata is context, never artifact content — see the
+README for what that guarantees.
 
 ## 7. Turning on agents (optional)
 

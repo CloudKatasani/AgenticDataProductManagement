@@ -9,6 +9,12 @@ import type { AutonomyLevel, Provenance } from '@/lib/domain/enums'
 import { buildStageContext } from '@/lib/lifecycle/context'
 import { getStage } from '@/lib/lifecycle/stages'
 import { decisionRegisterSchema, semanticModelSchema } from '@/lib/artifacts/registry'
+import {
+  externalMetadataSchema,
+  mergeExternalMetadata,
+  scopeExternalMetadata,
+  type ExternalMetadata,
+} from '@/lib/integrations/schema'
 import { getAgent, type AgentDefinition } from './registry'
 import { DEFAULT_MODEL_BY_LEVEL, isKnownModel } from './models'
 import { redactForAgent } from './redaction'
@@ -160,9 +166,20 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
     if (snapshot) scoped[type] = snapshot.content
   }
 
-  const { payload, redactedFields } = redactForAgent(scoped, {
-    allowSampleData: workspace.agentsMaySeeSampleData && agent.wantsSampleData,
-  })
+  // External metadata (erwin, Collibra, Alation) is context, not artifact content. It is
+  // narrowed to the slices this agent declared, then redacted on the same path as the artifacts —
+  // a catalogue export is exactly the kind of place a stray PII sample value hides.
+  const externalContext = agent.externalScope?.length
+    ? scopeExternalMetadata(
+        await loadExternalMetadata(input.productId),
+        agent.externalScope,
+      )
+    : {}
+
+  const { payload, redactedFields } = redactForAgent(
+    { ...scoped, ...(Object.keys(externalContext).length ? { external: externalContext } : {}) },
+    { allowSampleData: workspace.agentsMaySeeSampleData && agent.wantsSampleData },
+  )
 
   const facts = await buildFacts(agent, ctx, product)
   // Recorded whether or not it is the model that ends up running: with no API key the local
@@ -185,7 +202,12 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
     )
   }
 
-  const inputHash = contentHash({ scope: agent.readScope, payload, facts })
+  const inputHash = contentHash({
+    scope: agent.readScope,
+    externalScope: agent.externalScope ?? [],
+    payload,
+    facts,
+  })
 
   const action = await prisma.$transaction(async (tx) => {
     const created = await tx.agentAction.create({
@@ -195,7 +217,10 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
         productId: input.productId,
         stageNumber: input.stageNumber,
         trigger: input.trigger,
-        scopeJson: JSON.stringify(agent.readScope),
+        scopeJson: JSON.stringify({
+          artifacts: agent.readScope,
+          external: agent.externalScope ?? [],
+        }),
         inputHash,
         model: result.model,
         configuredModel,
@@ -293,6 +318,24 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
     redactedFields,
     estimatedCostUsd: result.estimatedCostUsd,
   }
+}
+
+/**
+ * The merged, most-recent-wins view of every external import for a product. Newest first so a
+ * re-import of the same catalogue supersedes the old one rather than duplicating it.
+ */
+export async function loadExternalMetadata(productId: string): Promise<ExternalMetadata> {
+  const rows = await prisma.externalMetadataImport.findMany({
+    where: { productId, archivedAt: null },
+    orderBy: { createdAt: 'desc' },
+  })
+  const parsed: ExternalMetadata[] = []
+  for (const row of rows) {
+    const result = externalMetadataSchema.safeParse(JSON.parse(row.payloadJson))
+    // A stored import that no longer validates is skipped rather than reaching an agent.
+    if (result.success) parsed.push(result.data)
+  }
+  return mergeExternalMetadata(parsed)
 }
 
 async function buildFacts(

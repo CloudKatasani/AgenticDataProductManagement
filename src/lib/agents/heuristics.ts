@@ -10,7 +10,11 @@ import {
   telemetrySchema,
 } from '@/lib/artifacts/registry'
 import type { CriterionResult } from '@/lib/lifecycle/criteria'
-import type { AgentInvocationContext, AgentOutput } from './provider'
+import type { AgentInvocationContext, AgentOutput, FindingDraft } from './provider'
+import {
+  externalMetadataSchema,
+  type ExternalMetadata,
+} from '@/lib/integrations/schema'
 
 /**
  * The local heuristic provider. Deterministic, rule-based, offline. It is not a language model
@@ -36,6 +40,103 @@ function parse<T>(
 }
 
 const empty: AgentOutput = { narrative: '', proposals: [], findings: [], comments: [] }
+
+/**
+ * The external metadata slice the runtime injected under `external`, already narrowed to what the
+ * agent declared and already redacted. Nothing here assumes any of it is present — every stage
+ * stays completable with no catalogue and no modelling tool connected.
+ */
+const emptyish = {
+  sources: [],
+  columnProfiles: [],
+  entities: [],
+  relationships: [],
+  glossary: [],
+  metrics: [],
+}
+
+function external(art: Record<string, unknown>): Partial<ExternalMetadata> {
+  const raw = art.external
+  if (!raw || typeof raw !== 'object') return {}
+  const parsed = externalMetadataSchema.safeParse({
+    ...emptyish,
+    ...(raw as Record<string, unknown>),
+  })
+  return parsed.success ? parsed.data : {}
+}
+
+/** Findings that say what an external tool already knows, so a human can act on the difference. */
+function externalFindings(art: Record<string, unknown>): FindingDraft[] {
+  const ext = external(art)
+  const findings: FindingDraft[] = []
+
+  const certified = (ext.sources ?? []).filter((s) => s.externalCertification)
+  if (certified.length) {
+    findings.push({
+      title: `${certified.length} source(s) already carry a certification in your catalogue`,
+      detail:
+        certified
+          .slice(0, 5)
+          .map((s) => `${s.name}: "${s.externalCertification}"${s.owner ? ` (owner ${s.owner})` : ''}`)
+          .join('; ') +
+        '. That is the catalogue\u2019s opinion, not this product\u2019s certification — it still needs evidence and an approval here.',
+      severity: 'LOW',
+    })
+  }
+
+  const classified = (ext.columnProfiles ?? []).filter((c) => c.classification)
+  if (classified.length) {
+    findings.push({
+      title: `${classified.length} column(s) are already classified in your catalogue`,
+      detail:
+        classified
+          .slice(0, 8)
+          .map((c) => `${c.source}.${c.column} = ${c.classification}`)
+          .join('; ') + '. Carry these into the attribute register rather than re-deciding them.',
+      severity: 'MEDIUM',
+    })
+  }
+
+  const highNull = (ext.columnProfiles ?? []).filter((c) => (c.nullRatePct ?? 0) > 5)
+  if (highNull.length) {
+    findings.push({
+      title: `${highNull.length} column(s) already profiled above a 5% null rate`,
+      detail:
+        highNull
+          .slice(0, 8)
+          .map((c) => `${c.source}.${c.column} at ${c.nullRatePct}%`)
+          .join('; ') + '. These came from your catalogue, not from a profile run here.',
+      severity: 'MEDIUM',
+    })
+  }
+
+  const terms = ext.glossary ?? []
+  if (terms.length) {
+    findings.push({
+      title: `${terms.length} glossary term(s) already defined`,
+      detail:
+        terms
+          .slice(0, 6)
+          .map((t) => `${t.term}${t.steward ? ` (steward ${t.steward})` : ''}`)
+          .join('; ') +
+        '. Reuse the existing wording where it holds, and say so where it does not.',
+      severity: 'LOW',
+    })
+  }
+
+  const metrics = ext.metrics ?? []
+  if (metrics.length) {
+    findings.push({
+      title: `${metrics.length} metric definition(s) exist in your catalogue`,
+      detail:
+        metrics.map((m) => m.name).slice(0, 8).join(', ') +
+        '. Check these before defining a new metric — a name that already means something else is a collision Stage 6 will block.',
+      severity: 'HIGH',
+    })
+  }
+
+  return findings
+}
 
 export function heuristicOutput(context: AgentInvocationContext): AgentOutput {
   const { agent, scopedArtifacts: art, facts } = context
@@ -152,10 +253,14 @@ function curator(facts: Facts): AgentOutput {
 function profiling(art: Record<string, unknown>): AgentOutput {
   const profile = parse(art, 'profile-report', profileReportSchema)
   const inventory = parse(art, 'source-inventory', sourceInventorySchema)
+  const imported = externalFindings(art)
   if (!profile) {
     return {
       ...empty,
-      narrative: 'No profile report is committed yet, so there is nothing to analyse.',
+      narrative: imported.length
+        ? 'No profile report is committed yet. What your catalogue already knows is below — it is a starting point, not a substitute for profiling here.'
+        : 'No profile report is committed yet, so there is nothing to analyse.',
+      findings: imported,
     }
   }
 
@@ -217,7 +322,17 @@ function modelling(art: Record<string, unknown>): AgentOutput {
     return { ...empty, narrative: 'No source inventory is committed yet.' }
   }
 
-  const entities = profile
+  const ext = external(art)
+  const modelled = (ext.entities ?? []).map((entity) => ({
+    name: entity.name,
+    description: entity.description || `Imported from your modelling tool.`,
+    primaryKey: entity.attributes.filter((a) => a.isKey).map((a) => a.name),
+    attributes: entity.attributes.map((a) => a.name),
+  }))
+
+  const entities = modelled.length
+    ? modelled
+    : profile
     ? profile.datasets.map((dataset) => ({
         name: dataset.source.replace(/[^A-Za-z0-9]+/g, ' ').trim(),
         description: `Derived from ${dataset.source}.`,

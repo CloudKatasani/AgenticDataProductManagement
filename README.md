@@ -202,6 +202,37 @@ Before transmission, values flagged as PII or restricted in the attribute regist
 sample data is withheld unless the workspace explicitly allows it. The redacted field count is
 reported back in the UI after every run.
 
+### Integrating erwin, Collibra and Alation
+
+Agents give better guidance when they know what your existing tools already know. Stages 3, 4 and 6
+accept an export from a data modelling tool or catalogue:
+
+| Connector | Supplies | Status |
+|---|---|---|
+| **Canonical import** (any tool) | everything | fully specified and round-trip tested |
+| **erwin Data Modeler** (CSV) | entities, relationships | mapped from the documented Bulk Editor layout, **unverified against a live instance** |
+| **Collibra** (JSON) | sources, glossary, metrics | mapped from the documented asset export, **unverified** |
+| **Alation** (JSON) | sources, column profiles, glossary | mapped from the documented bulk metadata shape, **unverified** |
+
+Three rules make this safe, and each is tested:
+
+- **An import is context, never content.** It is read by agents; it never becomes an artifact
+  version. Proposals derived from it still require a human disposition. See
+  [ADR 0009](docs/adr/0009-external-metadata-is-context-not-content.md) for why this beats turning
+  each imported row into a proposal.
+- **External context is scoped and declared.** Each agent declares which slices it may read, that
+  declaration is recorded on every `AgentAction`, and it is part of the input hash — invariant 6
+  does not distinguish artifact context from catalogue context. **The grounding agent is given
+  none of it**, because catalogue exports are full of physical Bronze and Silver table names and
+  invariant 7 says a grounding artifact may reference only certified semantic-layer objects.
+- **A catalogue's "certified" is not ADPM's.** External endorsement is carried verbatim as
+  `externalCertification` and never mapped onto certification here, which needs cited evidence and
+  a recorded approval.
+
+**Import-only, file-based, no live sync.** Nothing writes back to your catalogue, and nothing
+requires a reachable Collibra or Alation instance — the app still runs entirely offline. The local
+heuristic provider reads imported context too, so the benefit is visible with no API key.
+
 ---
 
 ## Packs
