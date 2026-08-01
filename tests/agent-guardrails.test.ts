@@ -1,7 +1,14 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { AGENTS, AGENT_FORBIDDEN_ACTIONS, agentMayEverDo, getAgent } from '@/lib/agents/registry'
-import { AgentError, dispositionProposal, effectiveAutonomy, invokeAgent } from '@/lib/agents/runtime'
+import {
+  AgentError,
+  assignedModel,
+  dispositionProposal,
+  effectiveAutonomy,
+  invokeAgent,
+} from '@/lib/agents/runtime'
+import { AGENT_MODELS, DEFAULT_MODEL_BY_LEVEL, MODEL_IDS } from '@/lib/agents/models'
 import { redactForAgent } from '@/lib/agents/redaction'
 import { evaluateExitCriteria } from '@/lib/lifecycle/transitions'
 import { allBlockingPassed } from '@/lib/lifecycle/criteria'
@@ -261,5 +268,74 @@ describe('redaction before transmission', () => {
     const serialised = JSON.stringify(payload)
     expect(serialised).not.toContain('nadia@example.com')
     expect(redactedFields.length).toBeGreaterThan(0)
+  })
+})
+
+describe('model assignment', () => {
+  it('never lets a model choice change what an agent may do', () => {
+    // The whole point of the feature: a bigger model is better at proposing, not entitled to more.
+    // If this ever fails, the model selector has become an authority control and must be removed.
+    for (const model of AGENT_MODELS) {
+      for (const action of AGENT_FORBIDDEN_ACTIONS) {
+        expect(agentMayEverDo(action), `${model.id} / ${action}`).toBe(false)
+      }
+    }
+    for (const agent of AGENTS) {
+      if (agent.autonomyCeiling === 'L3') expect(agent.outputType).toBe('FINDINGS')
+    }
+  })
+
+  it('falls back to a sensible default model per level when nothing is assigned', async () => {
+    const fixture = await createFixture({ agentsEnabled: true })
+    for (const level of AUTONOMY_LEVELS) {
+      const model = await assignedModel(fixture.workspaceId, level)
+      expect(MODEL_IDS).toContain(model)
+      expect(model).toBe(DEFAULT_MODEL_BY_LEVEL[level])
+    }
+  })
+
+  it('uses the workspace assignment once one exists, and ignores an unknown model id', async () => {
+    const fixture = await createFixture({ agentsEnabled: true })
+    await prisma.modelAssignment.create({
+      data: { workspaceId: fixture.workspaceId, autonomyLevel: 'L2', modelId: 'claude-opus-5' },
+    })
+    expect(await assignedModel(fixture.workspaceId, 'L2')).toBe('claude-opus-5')
+
+    // A model that has since been removed from the registry must not be handed to the provider.
+    await prisma.modelAssignment.update({
+      where: { workspaceId_autonomyLevel: { workspaceId: fixture.workspaceId, autonomyLevel: 'L2' } },
+      data: { modelId: 'some-retired-model' },
+    })
+    expect(await assignedModel(fixture.workspaceId, 'L2')).toBe(DEFAULT_MODEL_BY_LEVEL.L2)
+  })
+
+  it('records the assigned model and the model that actually ran, separately', async () => {
+    // Invariant 6. With no API key the local heuristic runs; the log must not imply otherwise.
+    const fixture = await createFixture({ agentsEnabled: true })
+    await prisma.modelAssignment.create({
+      data: { workspaceId: fixture.workspaceId, autonomyLevel: 'L1', modelId: 'claude-opus-5' },
+    })
+    const product = await createProduct(fixture)
+    const result = await invokeAgent({
+      agentId: 'critic',
+      workspaceId: fixture.workspaceId,
+      productId: product.id,
+      stageNumber: 1,
+      userId: fixture.users.get('DATA_STEWARD')!,
+      trigger: 'MANUAL',
+    })
+    const action = await prisma.agentAction.findUniqueOrThrow({ where: { id: result.actionId } })
+    expect(action.configuredModel).toBe('claude-opus-5')
+    expect(action.model).toBe('local-heuristic')
+    expect(action.model).not.toBe(action.configuredModel)
+  })
+
+  it('prices every model in the registry, so cost telemetry is never silently zero', () => {
+    for (const model of AGENT_MODELS) {
+      expect(model.pricePerMillionInput).toBeGreaterThan(0)
+      expect(model.pricePerMillionOutput).toBeGreaterThan(0)
+      expect(model.vendor).toBe('anthropic')
+      expect(model.bestFor.length).toBeGreaterThan(20)
+    }
   })
 })

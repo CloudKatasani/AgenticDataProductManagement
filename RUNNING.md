@@ -194,6 +194,9 @@ anywhere in ADPM), and **Stage 5** round-trips the attribute register through Ex
    and set a budget cap.
 2. **Agents** tab → set an autonomy level per agent. L1 (suggest) is the default. A
    workspace setting can only ever *lower* an agent's registry ceiling, never raise it.
+   The same tab narrows by **industry → domain → data product**, and lets an admin pick
+   which Anthropic model backs each autonomy level for that industry. A model choice
+   changes what an agent is good at, never what it may do.
 3. Open any stage → **Run agent** → review each proposal → **Accept**, **Edit &
    accept**, or **Reject**.
 
