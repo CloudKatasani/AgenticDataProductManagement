@@ -9,8 +9,9 @@ If you only want it running, read [RUNNING.md](../RUNNING.md) instead — it is 
 version of §1, with the seeded accounts and a guided first walkthrough. This document is the
 operational reference behind it.
 
-For hosting it on a server rather than a laptop, see [AWS.md](AWS.md) — which starts with the code
-changes that have to happen first.
+For hosting it on a server rather than a laptop, start with
+[hosting-prerequisites.md](hosting-prerequisites.md) — the code changes that have to happen first —
+then the guide for your cloud: [AWS](AWS.md), [Azure](AZURE.md) or [GCP](GCP.md).
 
 ---
 
