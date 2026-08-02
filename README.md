@@ -33,6 +33,8 @@ Needs Node 20.11+ and pnpm 10+.
   which gaps are deployment work and which are missing features.
 - Cloud guides, all building on that one: **[AWS](docs/AWS.md)** · **[Azure](docs/AZURE.md)** ·
   **[GCP](docs/GCP.md)**.
+- **[docs/screenshots/](docs/screenshots/)** — every tab and page captured against the seeded
+  database, regenerable with `pnpm screenshots`.
 
 Sign in with any seeded account and the password `adpm`:
 

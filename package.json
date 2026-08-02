@@ -2,7 +2,7 @@
   "name": "adpm",
   "version": "0.1.0",
   "private": true,
-  "description": "Agentic Data Product Management — supervised-autonomy lifecycle management for data products.",
+  "description": "Agentic Data Product Management \u2014 supervised-autonomy lifecycle management for data products.",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -21,6 +21,7 @@
     "db:seed:pg": "pnpm db:pg:setup && tsx prisma/seed.ts",
     "monitor": "tsx scripts/monitor.ts",
     "pack:validate": "tsx scripts/validate-packs.ts",
+    "screenshots": "tsx scripts/screenshots.ts",
     "postinstall": "node scripts/ensure-env.mjs && prisma generate"
   },
   "prisma": {
