@@ -86,7 +86,7 @@ export const ROLES: RoleDefinition[] = [
     description: 'Owns the shape of the data and the honesty of the grain statement.',
     sortOrder: 50,
     seedEmail: 'architect@adpm.local',
-    seedName: 'Lena Vogel',
+    seedName: 'Durga Katasani',
   },
   {
     key: 'DATA_ENGINEER',
@@ -149,7 +149,7 @@ export const ROLES: RoleDefinition[] = [
     description: 'Configures packs, role assignment, controls, agent settings and export templates.',
     sortOrder: 110,
     seedEmail: 'admin@adpm.local',
-    seedName: 'Ravi Menon',
+    seedName: 'Durga Katasani',
   },
 ]
 
