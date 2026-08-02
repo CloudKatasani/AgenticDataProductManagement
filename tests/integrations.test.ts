@@ -378,3 +378,36 @@ describe('imported context changes what an agent says, offline', () => {
     expect(result.proposalCount).toBe(0)
   })
 })
+
+describe('connectors are discoverable where agents are configured', () => {
+  it('lists every connector the Agents tab renders from the registry', () => {
+    // The Agents tab claims every charter, scope, autonomy level and cost is on that page.
+    // External context is part of an agent's scope, so the connectors belong there too — this
+    // asserts the registry the page renders from is complete, so adding a connector shows up
+    // without touching the page.
+    const names = CONNECTORS.map((c) => c.name.toLowerCase())
+    expect(names.some((n) => n.includes('erwin'))).toBe(true)
+    expect(names.some((n) => n.includes('collibra'))).toBe(true)
+    expect(names.some((n) => n.includes('alation'))).toBe(true)
+    for (const connector of CONNECTORS) {
+      expect(connector.supplies.length).toBeGreaterThan(0)
+      expect(connector.category).toMatch(/^(DATA_MODELLING|DATA_CATALOGUE|OPEN)$/)
+    }
+    expect(CONNECTORS.some((c) => c.category === 'DATA_MODELLING')).toBe(true)
+    expect(CONNECTORS.some((c) => c.category === 'DATA_CATALOGUE')).toBe(true)
+  })
+
+  it('gives every agent a stateable external scope, including an explicit none', () => {
+    // Rendered per agent on the Agents tab. An agent with no declared scope must read as a
+    // deliberate "none", not as a missing field.
+    for (const agent of AGENTS) {
+      const scope = agent.externalScope ?? []
+      expect(Array.isArray(scope)).toBe(true)
+      for (const kind of scope) expect(EXTERNAL_CONTEXT_KINDS).toContain(kind)
+    }
+    const withScope = AGENTS.filter((a) => (a.externalScope ?? []).length > 0)
+    expect(withScope.map((a) => a.id).sort()).toEqual(
+      ['critic', 'definition', 'modelling', 'profiling', 'semantic'],
+    )
+  })
+})
