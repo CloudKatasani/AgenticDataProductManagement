@@ -92,13 +92,16 @@ Every stage carries the same furniture: a "why this stage matters" panel, a live
 checklist, an agent panel, a review thread anchored to fields, version diff, parking lot, gate
 panel and audit timeline.
 
-Two stages add an import surface, because the web form is the wrong tool for that job:
+Some stages add an import surface, because the web form is the wrong tool for that job:
 
 - **Stage 3** profiles an uploaded **CSV extract** — row counts, null rates, cardinality, ranges and
   patterns are computed locally. No core flow anywhere in the application requires a warehouse
   connection. Sample values are withheld unless explicitly requested.
 - **Stage 5** round-trips the **attribute register through Excel**, because nobody reviews 200
   attributes in a browser.
+- **Stages 3, 4 and 6** import from **erwin, Collibra and Alation**, so the agents chartered for
+  discovery, profiling, modelling and semantics know what your existing tools already know. See
+  [Integrating erwin, Collibra and Alation](#integrating-erwin-collibra-and-alation).
 
 **Guided tours drive the real UI.** Starting a tour from the Academy pins a persistent overlay that
 navigates to each screen it describes and survives the navigation. It is not a slideshow, which
@@ -232,6 +235,10 @@ Three rules make this safe, and each is tested:
 **Import-only, file-based, no live sync.** Nothing writes back to your catalogue, and nothing
 requires a reachable Collibra or Alation instance — the app still runs entirely offline. The local
 heuristic provider reads imported context too, so the benefit is visible with no API key.
+
+**Where to find it.** The **Agents** tab lists every connector, what each supplies, what has been
+imported in the workspace, and — per agent — which external context that agent may read. You
+perform the import from a product's **Stage 3, 4 or 6**, next to the artifact it informs.
 
 ---
 

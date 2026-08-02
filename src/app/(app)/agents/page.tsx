@@ -8,6 +8,7 @@ import { artifactTitle } from '@/lib/artifacts/registry'
 import { AgentTargeting, StewardRunForm, type TargetOption } from './panels'
 import { updateAgentSetting, updateWorkspaceAgentPolicy } from './actions'
 import { AGENT_MODELS, DEFAULT_MODEL_BY_LEVEL } from '@/lib/agents/models'
+import { CONNECTORS, getConnector } from '@/lib/integrations/registry'
 import { validatePack } from '@/lib/packs/schema'
 import { Badge, Button, Card, CardBody, CardHeader, Callout, PageHeader } from '@/components/ui'
 
@@ -96,6 +97,21 @@ export default async function AgentsPage() {
     const bucket = assignmentsByWorkspace[assignment.workspaceId]
     if (bucket) bucket[assignment.autonomyLevel] = assignment.modelId
   }
+
+  const workspaceImportRows = await prisma.externalMetadataImport.findMany({
+    where: { workspaceId: session.workspaceId, archivedAt: null },
+    include: { product: { select: { name: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 15,
+  })
+  const workspaceImports = workspaceImportRows.map((row) => ({
+    id: row.id,
+    productId: row.productId,
+    productName: row.product.name,
+    connectorName: getConnector(row.connectorKey)?.name ?? row.connectorKey,
+    summary: row.summary,
+    importedOn: row.createdAt.toLocaleDateString('en-GB'),
+  }))
 
   const publishedProducts = await prisma.dataProduct.findMany({
     where: { workspaceId: session.workspaceId, status: 'PUBLISHED' },
@@ -188,6 +204,77 @@ export default async function AgentsPage() {
         </CardBody>
       </Card>
 
+      <Card className="mt-6">
+        <CardHeader
+          title="External context: modelling and catalogue tools"
+          description="What your existing tools already know, made available to the agents chartered to read it. Import from a product's Stage 3, 4 or 6 — an import is agent context, never artifact content."
+        />
+        <CardBody>
+          <ul className="space-y-3 text-sm">
+            {CONNECTORS.map((connector) => (
+              <li key={connector.key} className="rounded-md border border-ink-200 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-ink-900">{connector.name}</span>
+                  <Badge tone="info">{connector.vendor}</Badge>
+                  <Badge tone="neutral">
+                    {connector.category === 'DATA_MODELLING'
+                      ? 'data modelling'
+                      : connector.category === 'DATA_CATALOGUE'
+                        ? 'data catalogue'
+                        : 'open format'}
+                  </Badge>
+                  <Badge tone={connector.verification ? 'good' : 'warn'}>
+                    {connector.verification ? 'format specified and tested' : 'unverified against a live instance'}
+                  </Badge>
+                  <Badge tone="neutral">import only</Badge>
+                </div>
+                <p className="mt-1 text-xs text-ink-600">
+                  Supplies: {connector.supplies.join(', ')}
+                </p>
+                <p className="mt-1 text-xs text-ink-500">{connector.note}</p>
+                <p className="mt-1 text-xs text-ink-500">
+                  <span className="font-medium">How to export:</span> {connector.howToExport}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-4 border-t border-ink-200 pt-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-500">
+              Imported in this workspace
+            </p>
+            {workspaceImports.length === 0 ? (
+              <p className="mt-1 text-sm text-ink-600">
+                Nothing imported yet. Open a product&rsquo;s Stage 3, 4 or 6 to import an export —
+                agents give the same guidance with nothing connected, just less informed guidance.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-1 text-xs text-ink-700">
+                {workspaceImports.map((item) => (
+                  <li key={item.id}>
+                    <Link
+                      href={`/products/${item.productId}/stage/3`}
+                      className="text-accent-600 hover:underline"
+                    >
+                      {item.productName}
+                    </Link>{' '}
+                    — {item.connectorName}: {item.summary}{' '}
+                    <span className="text-ink-500">({item.importedOn})</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <p className="mt-4 text-xs text-ink-500">
+            Import only, file-based, no live sync. Nothing here writes back to your catalogue, and
+            no core flow needs a reachable Collibra or Alation instance. See{' '}
+            <span className="font-mono">docs/adr/0009-external-metadata-is-context-not-content.md</span>{' '}
+            for why an import is context rather than a pile of proposals.
+          </p>
+        </CardBody>
+      </Card>
+
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>
@@ -210,6 +297,16 @@ export default async function AgentsPage() {
                     <p className="mt-2 text-xs text-ink-500">
                       Stages: {agent.stages.length ? agent.stages.join(', ') : 'all'} · Reads:{' '}
                       {agent.readScope.map(artifactTitle).join(', ')}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-500">
+                      External context:{' '}
+                      {agent.externalScope?.length ? (
+                        agent.externalScope.join(', ')
+                      ) : (
+                        <span className="text-ink-400">
+                          none — this agent sees no modelling or catalogue import
+                        </span>
+                      )}
                     </p>
                     <p className="mt-1 text-xs text-ink-500">Escalation: {agent.escalationRule}</p>
                     <p className="mt-1 text-xs text-ink-500">
