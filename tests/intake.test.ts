@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
 import { findNearMatches } from '@/lib/requests/duplicates'
+import { INTAKE_FIELD_STEP, readIntakeForm, validateIntake } from '@/lib/requests/intake'
 import { REQUEST_TERMINAL_STATES } from '@/lib/domain/enums'
 import { blueprintArtifacts, commit, createFixture, createProduct } from './helpers/fixtures'
 
@@ -103,5 +104,80 @@ describe('intake and triage', () => {
       questions: ['Which accounts crossed 60 days in arrears this week?'],
     })
     expect(matches.some((match) => match.kind === 'REQUEST')).toBe(true)
+  })
+})
+
+/**
+ * The wizard builds its payload from state and validates it with the same schema the server uses,
+ * so the second press of the button — "Submit anyway", after the duplicate check — carries the
+ * requester's answers instead of a form React has already reset.
+ */
+function wizardPayload(overrides: Record<string, string> = {}, confirmed = false) {
+  const answers: Record<string, string> = {
+    title: 'Weekly view of accounts in arrears',
+    decision: 'Which accounts to place on a payment plan rather than escalate this week',
+    consumerRole: 'Credit & Collections Manager',
+    peopleAffected: '12',
+    cadence: 'Weekly',
+    currentWorkaround: 'Three exports stitched together in a spreadsheet',
+    timeTakenToday: 'About 4 hours a week',
+    stakes: 'We escalate accounts that would have recovered, and miss the ones that will not.',
+    quantifiedImpact: '',
+    requiredFreshness: 'Daily by 07:00',
+    preferredPatternKey: '',
+    sensitivityNotes: '',
+    ...overrides,
+  }
+  const payload = new FormData()
+  for (const [field, value] of Object.entries(answers)) payload.set(field, value)
+  for (const question of [
+    'Which accounts crossed 60 days in arrears this week?',
+    'Which of those accounts hold a protected flag?',
+    'What is the expected recovery if we offer a plan?',
+  ]) {
+    payload.append('questions', question)
+  }
+  if (confirmed) payload.set('confirmed', 'true')
+  return payload
+}
+
+describe('intake payload validation', () => {
+  it('accepts a fully answered wizard payload', () => {
+    const result = validateIntake(readIntakeForm(wizardPayload()))
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.questions).toHaveLength(3)
+      expect(result.data.peopleAffected).toBe(12)
+    }
+  })
+
+  it('carries every answer through a confirmed resubmit', () => {
+    const payload = wizardPayload({}, true)
+    const result = validateIntake(readIntakeForm(payload))
+    expect(result.ok).toBe(true)
+    expect(payload.get('confirmed')).toBe('true')
+    if (result.ok) expect(result.data.title).toBe('Weekly view of accounts in arrears')
+  })
+
+  it('names the step that owns a missing answer', () => {
+    const result = validateIntake(readIntakeForm(wizardPayload({ requiredFreshness: '' })))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.field).toBe('requiredFreshness')
+      expect(result.error.step).toBe(INTAKE_FIELD_STEP.requiredFreshness)
+      expect(result.error.message).toBeTruthy()
+    }
+  })
+
+  it('rejects an empty payload rather than failing silently', () => {
+    const result = validateIntake(readIntakeForm(new FormData()))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.step).not.toBeNull()
+  })
+
+  it('maps every intake answer to a wizard step', () => {
+    for (const field of Object.keys(readIntakeForm(wizardPayload()))) {
+      expect(INTAKE_FIELD_STEP[field]).toBeTypeOf('number')
+    }
   })
 })
