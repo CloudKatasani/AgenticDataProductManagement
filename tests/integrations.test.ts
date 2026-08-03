@@ -407,7 +407,11 @@ describe('connectors are discoverable where agents are configured', () => {
     }
     const withScope = AGENTS.filter((a) => (a.externalScope ?? []).length > 0)
     expect(withScope.map((a) => a.id).sort()).toEqual(
-      ['critic', 'definition', 'modelling', 'profiling', 'semantic'],
+      ['architecture', 'critic', 'definition', 'modelling', 'profiling', 'semantic'],
     )
+    // Invariant 7 in list form: the Grounding agent is absent and stays absent. A catalogue
+    // export is full of physical Bronze and Silver names, and the surest way to keep them out of
+    // a grounding pack is for the agent that writes one never to see them.
+    expect(withScope.map((a) => a.id)).not.toContain('grounding')
   })
 })

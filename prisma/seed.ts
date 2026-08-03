@@ -21,9 +21,21 @@ import type { Pack, PackSeedProduct } from '../src/lib/packs/schema'
 const NOW = new Date('2026-08-01T09:00:00.000Z')
 const PRIMARY_PACK = 'utility-energy'
 
+/**
+ * Products left deliberately mid-lifecycle in the primary workspace, keyed by their position
+ * counted back from the end of the pack. The value is the last stage they clear, so the product
+ * sits open on the stage after it with real committed artifacts behind it and nothing ahead.
+ */
+const IN_PROGRESS_SEEDS = new Map<number, number>([
+  [1, 1],
+  [2, 6],
+])
+
 async function reset() {
   // Order matters: children before parents.
   await prisma.$transaction([
+    prisma.agentRunStep.deleteMany(),
+    prisma.agentRun.deleteMany(),
     prisma.agentProposal.deleteMany(),
     prisma.agentAction.deleteMany(),
     prisma.agentSetting.deleteMany(),
@@ -43,6 +55,7 @@ async function reset() {
     prisma.consumptionPatternBinding.deleteMany(),
     prisma.changeRequest.deleteMany(),
     prisma.auditEvent.deleteMany(),
+    prisma.externalMetadataImport.deleteMany(),
     prisma.dataProduct.deleteMany(),
     prisma.requestMessage.deleteMany(),
     prisma.productRequest.deleteMany(),
@@ -192,8 +205,17 @@ async function seedProduct(params: {
   domainName: string
   users: Map<RoleKey, string>
   requestId?: string
+  /**
+   * How far to carry the product. Defaults to the whole lifecycle. A lower number leaves a
+   * genuinely in-progress product with real upstream artifacts and an open stage ahead of it —
+   * which is what the Lifecycle Studio and the Agent Run Console need in order to show anything
+   * at all. A catalogue of 73 finished products has nothing left to demonstrate.
+   */
+  throughStage?: number
 }) {
   const { pack, spec, workspaceId, domainId, users } = params
+  const throughStage = params.throughStage ?? STAGES.length
+  const completed = throughStage >= STAGES.length
   const ownerId = users.get('DOMAIN_PRODUCT_OWNER')!
   const stewardId = users.get('DATA_STEWARD')!
 
@@ -236,7 +258,7 @@ async function seedProduct(params: {
     domainName: params.domainName,
   })
 
-  for (const stage of STAGES) {
+  for (const stage of STAGES.filter((s) => s.number <= throughStage)) {
     await ensureStageRun(product.id, stage.number)
 
     for (const artifactType of artifactTypesForStage(stage.number)) {
@@ -284,6 +306,17 @@ async function seedProduct(params: {
         rationale: `${getStage(stage.number).name} reviewed against the exit criteria.`,
       })
     }
+  }
+
+  if (!completed) {
+    // Left mid-flight: the next stage is open, nothing is published, and the exit criteria for
+    // that stage genuinely do not pass yet.
+    await prisma.dataProduct.update({
+      where: { id: product.id },
+      data: { currentStage: throughStage + 1, status: 'IN_PROGRESS', semanticVersion: '0.1.0' },
+    })
+    await ensureStageRun(product.id, throughStage + 1)
+    return product
   }
 
   // Pattern readiness bindings, computed rather than asserted.
@@ -531,9 +564,15 @@ async function main() {
     const { workspace, domains } = await seedWorkspace(pack, byRole, secondConsumer.id)
 
     const productIds: string[] = []
-    for (const spec of pack.seedProducts) {
+    for (const [index, spec] of pack.seedProducts.entries()) {
       const domainId = domains.get(spec.domainKey)!
       const domainName = pack.domains.find((d) => d.key === spec.domainKey)!.name
+      // A marketplace of nothing but finished products has nothing left to demonstrate, so the
+      // primary pack keeps its last two mid-flight: one at the very start, one halfway. They are
+      // what the Lifecycle Studio and the Agent Run Console actually have work to do on.
+      const throughStage = IN_PROGRESS_SEEDS.get(
+        pack.key === PRIMARY_PACK ? pack.seedProducts.length - index : -1,
+      )
       process.stdout.write(`  · ${spec.name} `)
       const product = await seedProduct({
         pack,
@@ -542,9 +581,14 @@ async function main() {
         domainId,
         domainName,
         users: byRole,
+        throughStage,
       })
-      productIds.push(product.id)
-      console.log('→ published')
+      if (throughStage === undefined) {
+        productIds.push(product.id)
+        console.log('→ published')
+      } else {
+        console.log(`→ in progress at Stage ${throughStage + 1}`)
+      }
     }
 
     if (pack.key === PRIMARY_PACK) {

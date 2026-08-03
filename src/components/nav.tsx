@@ -32,6 +32,7 @@ export const NAV_GROUPS: { group: string; items: { href: string; label: string; 
     group: 'Enable',
     items: [
       { href: '/patterns', label: 'Consumption Patterns', hint: 'The eight ways a product is used' },
+      { href: '/run-console', label: 'Agent Run Console', hint: 'Dispatch agents across the 12 stages, automated or manual' },
       { href: '/agents', label: 'Agents', hint: 'Charters, autonomy, supervision and cost' },
       { href: '/academy', label: 'Academy', hint: 'How data products work here' },
     ],
