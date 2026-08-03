@@ -58,6 +58,12 @@ export interface InvokeAgentInput {
   trigger: AgentTrigger
   /** Set when one agent invoked another; the orchestration record still names the human above. */
   orchestrationParentId?: string
+  /**
+   * The model a run console operator chose for this dispatch, overriding the workspace assignment
+   * for the agent's autonomy level. It changes what the agent is good at, never what it may do —
+   * every guardrail above and below this line is evaluated identically whichever model runs.
+   */
+  modelOverride?: string
 }
 
 export interface InvokeAgentResult {
@@ -184,7 +190,10 @@ export async function invokeAgent(input: InvokeAgentInput): Promise<InvokeAgentR
   const facts = await buildFacts(agent, ctx, product)
   // Recorded whether or not it is the model that ends up running: with no API key the local
   // heuristic runs instead, and the action log has to show both rather than imply otherwise.
-  const configuredModel = await assignedModel(input.workspaceId, autonomy)
+  const configuredModel =
+    input.modelOverride && isKnownModel(input.modelOverride)
+      ? input.modelOverride
+      : await assignedModel(input.workspaceId, autonomy)
   const provider = await resolveProvider(configuredModel)
 
   let result: ProviderResult

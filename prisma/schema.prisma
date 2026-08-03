@@ -44,6 +44,7 @@ model Workspace {
   agentSettings       AgentSetting[]
   modelAssignments    ModelAssignment[]
   metadataImports     ExternalMetadataImport[]
+  agentRuns           AgentRun[]
 }
 
 model Domain {
@@ -95,6 +96,7 @@ model User {
   proposalDispositions AgentProposal[]
   fieldProvenance  FieldProvenance[]
   prioritisationOverrides PrioritisationOverride[]
+  agentRunsStarted AgentRun[]         @relation("AgentRunStarter")
 }
 
 /// Roles are seeded from src/lib/domain/roles.ts. The table exists so assignments can be
@@ -230,6 +232,7 @@ model DataProduct {
   agentProposals  AgentProposal[]
   prioritisation  PrioritisationOverride[]
   metadataImports ExternalMetadataImport[]
+  agentRuns       AgentRun[]
 
   @@unique([workspaceId, key])
   @@index([workspaceId, status])
@@ -705,4 +708,61 @@ model AgentProposal {
   dispositionBy User?       @relation(fields: [dispositionById], references: [id])
 
   @@index([productId, stageNumber, state])
+}
+
+/// One supervised pass of a product through the lifecycle with agents drafting ahead of the
+/// humans. A run dispatches agents and records what they produced; it approves nothing, commits
+/// nothing and satisfies no exit criterion. It halts at every point where a human must act, which
+/// is why its states name what it is waiting FOR rather than what it has done.
+model AgentRun {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  productId      String
+  /// AUTOMATED dispatches each stage's agents on its own; MANUAL waits for a person per step.
+  mode           String    @default("AUTOMATED")
+  /// RUNNING | AWAITING_REVIEW | AWAITING_GATE | BLOCKED | COMPLETED | CANCELLED
+  state          String    @default("RUNNING")
+  /// The model the operator chose for this run. Recorded even when no API key is configured and
+  /// the local heuristic runs instead, so the log never implies a model ran that did not.
+  requestedModel String    @default("")
+  fromStage      Int       @default(1)
+  toStage        Int       @default(12)
+  currentStage   Int       @default(1)
+  /// Why the run is not moving, in the words shown to the operator.
+  statusDetail   String    @default("")
+  startedById    String
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  endedReason    String    @default("")
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id])
+  product   DataProduct @relation(fields: [productId], references: [id])
+  startedBy User        @relation("AgentRunStarter", fields: [startedById], references: [id])
+  steps     AgentRunStep[]
+
+  @@index([productId, state])
+  @@index([workspaceId, startedAt])
+}
+
+/// One planned agent dispatch inside a run. Planned up front from the stage registry so the
+/// operator can see the whole route before anything is spent, and appended to, never rewritten.
+model AgentRunStep {
+  id            String    @id @default(cuid())
+  runId         String
+  stageNumber   Int
+  agentId       String
+  sequence      Int
+  /// PENDING | RUNNING | DRAFTED | SKIPPED | FAILED
+  state         String    @default("PENDING")
+  /// The AgentAction this dispatch produced. Null until it has run.
+  agentActionId String?
+  detail        String    @default("")
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime  @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id])
+
+  @@unique([runId, sequence])
+  @@index([runId, stageNumber])
 }

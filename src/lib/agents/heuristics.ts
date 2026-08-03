@@ -3,6 +3,7 @@ import {
   dataContractSchema,
   decisionRegisterSchema,
   groundingPackSchema,
+  logicalModelSchema,
   physicalArchitectureSchema,
   profileReportSchema,
   semanticModelSchema,
@@ -145,6 +146,8 @@ export function heuristicOutput(context: AgentInvocationContext): AgentOutput {
       return discovery(art, facts)
     case 'curator':
       return curator(facts)
+    case 'charter':
+      return charter(art)
     case 'profiling':
       return profiling(art)
     case 'modelling':
@@ -153,6 +156,8 @@ export function heuristicOutput(context: AgentInvocationContext): AgentOutput {
       return definition(art)
     case 'semantic':
       return semantic(art, facts)
+    case 'architecture':
+      return architecture(art)
     case 'quality':
       return quality(art)
     case 'compliance':
@@ -246,6 +251,69 @@ function curator(facts: Facts): AgentOutput {
       detail: `Shares ${o.sharedEntities.join(', ') || 'no entities'} and ${o.sharedQuestions} question(s). Consider reusing rather than rebuilding — a human decides, not me.`,
       severity: o.sharedEntities.length >= 2 ? ('HIGH' as const) : ('MEDIUM' as const),
     })),
+    comments: [],
+  }
+}
+
+/**
+ * Stage 2. Scope comes out of the decision register; the value numbers deliberately do not. The
+ * agent proposes how the hypothesis would be measured and leaves the baseline blank, because a
+ * fabricated baseline is worse than an empty one — it survives review by looking finished.
+ */
+function charter(art: Record<string, unknown>): AgentOutput {
+  const register = parse(art, 'decision-register', decisionRegisterSchema)
+  if (!register || register.decisions.length === 0) {
+    return {
+      ...empty,
+      narrative:
+        'No decision register is committed yet. Stage 2 is blocked on Stage 1 by design — there is nothing to scope against.',
+    }
+  }
+
+  const decisions = register.decisions
+  const personas = [...new Set(decisions.map((d) => d.consumerPersona).filter(Boolean))]
+  const questions = decisions.flatMap((d) => d.questions)
+  const primary = decisions[0]!
+
+  return {
+    narrative: `Drafted a scope boundary from ${decisions.length} decision record(s) and ${questions.length} question(s). The value hypothesis names its measurement method; the baseline is deliberately left for you to supply.`,
+    proposals: [
+      {
+        fieldPath: 'purpose',
+        value: `Enable ${personas.join(' and ') || 'the named consumer'} to decide ${primary.decision.toLowerCase()} without assembling the data by hand.`,
+        rationale: 'Restates the Stage 1 decision as a purpose, so the scope traces to a blocked decision rather than to a source system.',
+      },
+      {
+        fieldPath: 'inScope',
+        value: questions.slice(0, 6).map((question) => `Answer: ${question}`),
+        rationale: 'One in-scope item per recorded question. Anything that answers no recorded question is out of scope by construction.',
+      },
+      {
+        fieldPath: 'outOfScope',
+        value: [
+          'Any question not recorded in the Stage 1 decision register.',
+          'Real-time or sub-daily delivery unless a decision record demands it.',
+          'Serving consumers outside the named persona(s) without a new decision record.',
+        ],
+        rationale: 'An explicit out-of-scope list is what stops scope creep being settled by whoever asks last. Argue with these three.',
+      },
+      {
+        fieldPath: 'stakeholders',
+        value: personas.map((role) => ({ role, name: '' })),
+        rationale: 'Roles taken from the decision register. Names are left blank — the agent does not know who holds these roles.',
+      },
+      {
+        fieldPath: 'hypothesis.statement',
+        value: `${personas[0] || 'The consumer'} reaches a decision on "${primary.decision}" without the current workaround (${primary.currentWorkaround || 'manual assembly'}).`,
+        rationale: 'Written so it can be falsified at Stage 12. A hypothesis that cannot fail is not a hypothesis.',
+      },
+      {
+        fieldPath: 'hypothesis.measurementMethod',
+        value: `Compare time-to-decision and rework rate before and after publication, sampled over one full ${primary.cadence || 'decision'} cycle.`,
+        rationale: 'The method is proposable from the register; the baseline number is not. Supply the baseline yourself — a fabricated one would survive review by looking finished.',
+      },
+    ],
+    findings: [],
     comments: [],
   }
 }
@@ -438,6 +506,63 @@ function semantic(art: Record<string, unknown>, facts: Facts): AgentOutput {
       detail: `Owned by ${existing.find((e) => e.metric.toLowerCase() === metric.name.toLowerCase())?.productKey}. One metric, one definition, one answer — rename or reuse.`,
       severity: 'CRITICAL' as const,
     })),
+    comments: [],
+  }
+}
+
+/**
+ * Stage 7. Layer assignment follows the contract already agreed at Stage 5 rather than inventing
+ * a platform: the agent describes capability, never a vendor, because naming a product is spend.
+ */
+function architecture(art: Record<string, unknown>): AgentOutput {
+  const model = parse(art, 'logical-model', logicalModelSchema)
+  const contract = parse(art, 'data-contract', dataContractSchema)
+  const inventory = parse(art, 'source-inventory', sourceInventorySchema)
+  if (!model || model.entities.length === 0) {
+    return {
+      ...empty,
+      narrative: 'No logical model is committed yet. There is nothing to lay out physically.',
+    }
+  }
+
+  const entities = model.entities
+  const sources = inventory?.sources ?? []
+  // The contract states freshness in minutes, so "sub-daily" is arithmetic rather than a guess.
+  const freshnessMinutes = contract?.slas?.freshnessMinutes ?? 0
+  const freshness = freshnessMinutes ? `${freshnessMinutes} minute(s)` : ''
+  const incremental = freshnessMinutes > 0 && freshnessMinutes < 24 * 60
+
+  return {
+    narrative: `Proposed a medallion layout for ${entities.length} entity/entities across ${sources.length || 'the declared'} source(s), sized to the freshness the Stage 5 contract already promises${freshness ? ` (${freshness})` : ''}. Platform is described as a capability — naming a vendor is your call, not the agent's.`,
+    proposals: [
+      {
+        fieldPath: 'platformProfile',
+        value: incremental
+          ? 'A warehouse or lakehouse supporting incremental merge and change capture at sub-daily frequency.'
+          : 'A warehouse or lakehouse supporting scheduled batch merge at daily frequency.',
+        rationale: 'Stated as a capability the contract requires, not a product. Replace with the platform your organisation actually runs.',
+      },
+      {
+        fieldPath: 'ingestionPattern',
+        value: incremental ? 'Change data capture into bronze, merged into silver' : 'Scheduled batch extract into bronze, merged into silver',
+        rationale: `Derived from the contract freshness${freshness ? ` of "${freshness}"` : ''}. A looser pattern than the contract promises would be a breach on day one.`,
+      },
+      {
+        fieldPath: 'refreshStrategy',
+        value: incremental ? 'Incremental merge on the declared primary key' : 'Full refresh of silver, incremental merge into gold',
+        rationale: 'Keyed on the grain the logical model already declares, so the physical layout cannot contradict the model.',
+      },
+      {
+        fieldPath: 'layers',
+        value: {
+          bronze: sources.map((source) => `bronze_${source.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`),
+          silver: entities.map((entity) => `silver_${entity.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`),
+          gold: [`gold_${entities[0]!.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_serving`],
+        },
+        rationale: 'One bronze object per declared source, one silver object per modelled entity, one gold serving object. Split gold further if the consumption patterns diverge.',
+      },
+    ],
+    findings: [],
     comments: [],
   }
 }

@@ -7,29 +7,10 @@ import { requireSession } from '@/lib/auth/session'
 import { assertRole } from '@/lib/auth/authorise'
 import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { findNearMatches, type NearMatch } from '@/lib/requests/duplicates'
+import { readIntakeForm, validateIntake } from '@/lib/requests/intake'
 import { REQUEST_TERMINAL_STATES, type RequestState } from '@/lib/domain/enums'
 import { getStage } from '@/lib/lifecycle/stages'
 import { ensureStageRun } from '@/lib/lifecycle/transitions'
-
-const intakeSchema = z.object({
-  title: z.string().trim().min(5, 'Give the request a short title.'),
-  decision: z.string().trim().min(15, 'Describe the decision you cannot make today.'),
-  consumerRole: z
-    .string()
-    .trim()
-    .min(3, 'Name a specific role.')
-    .refine((v) => !/^the business$/i.test(v), 'Name a specific role, not "the business".'),
-  peopleAffected: z.coerce.number().min(1),
-  cadence: z.string().trim().min(2, 'How often does this decision recur?'),
-  currentWorkaround: z.string().trim().min(5, 'What do you do today instead?'),
-  timeTakenToday: z.string().trim().min(2, 'Roughly how long does it take today?'),
-  questions: z.array(z.string().trim().min(5)).min(3, 'Give at least three questions.'),
-  stakes: z.string().trim().min(15, 'What happens if the decision is not made, or made badly?'),
-  quantifiedImpact: z.string().trim().default(''),
-  requiredFreshness: z.string().trim().min(2, 'How fresh does the data need to be?'),
-  preferredPatternKey: z.string().trim().default(''),
-  sensitivityNotes: z.string().trim().default(''),
-})
 
 export interface IntakeResult {
   ok?: string
@@ -38,13 +19,10 @@ export interface IntakeResult {
   requestId?: string
   /** True once near-matches have been shown, so the next submit goes through. */
   checked?: boolean
-}
-
-function readQuestions(formData: FormData): string[] {
-  return formData
-    .getAll('questions')
-    .map((q) => String(q).trim())
-    .filter(Boolean)
+  /** The wizard step that owns the failing answer, so the form can jump to it. */
+  errorStep?: number
+  /** The id of the failing input, so the form can focus it. */
+  errorField?: string
 }
 
 export async function submitRequest(
@@ -52,23 +30,13 @@ export async function submitRequest(
   formData: FormData,
 ): Promise<IntakeResult> {
   const session = await requireSession()
-  const parsed = intakeSchema.safeParse({
-    title: formData.get('title'),
-    decision: formData.get('decision'),
-    consumerRole: formData.get('consumerRole'),
-    peopleAffected: formData.get('peopleAffected'),
-    cadence: formData.get('cadence'),
-    currentWorkaround: formData.get('currentWorkaround'),
-    timeTakenToday: formData.get('timeTakenToday'),
-    questions: readQuestions(formData),
-    stakes: formData.get('stakes'),
-    quantifiedImpact: formData.get('quantifiedImpact'),
-    requiredFreshness: formData.get('requiredFreshness'),
-    preferredPatternKey: formData.get('preferredPatternKey'),
-    sensitivityNotes: formData.get('sensitivityNotes'),
-  })
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please complete the required answers.' }
+  const parsed = validateIntake(readIntakeForm(formData))
+  if (!parsed.ok) {
+    return {
+      error: parsed.error.message,
+      errorStep: parsed.error.step ?? undefined,
+      errorField: parsed.error.field || undefined,
+    }
   }
 
   const matches = await findNearMatches({

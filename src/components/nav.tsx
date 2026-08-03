@@ -32,6 +32,7 @@ export const NAV_GROUPS: { group: string; items: { href: string; label: string; 
     group: 'Enable',
     items: [
       { href: '/patterns', label: 'Consumption Patterns', hint: 'The eight ways a product is used' },
+      { href: '/run-console', label: 'Agent Run Console', hint: 'Dispatch agents across the 12 stages, automated or manual' },
       { href: '/agents', label: 'Agents', hint: 'Charters, autonomy, supervision and cost' },
       { href: '/academy', label: 'Academy', hint: 'How data products work here' },
     ],
@@ -48,7 +49,7 @@ export function MainNav() {
     <nav aria-label="Main" className="flex flex-wrap items-center gap-x-6 gap-y-2">
       {NAV_GROUPS.map((group) => (
         <div key={group.group} className="flex items-center gap-1">
-          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-brand-300">
             {group.group}
           </span>
           {group.items.map((item) => {
@@ -61,9 +62,11 @@ export function MainNav() {
                 aria-current={active ? 'page' : undefined}
                 className={clsx(
                   'rounded-md px-2.5 py-1.5 text-sm font-medium transition',
+                  // Active is the vibrant blue: it reads as a component against the deep bar at
+                  // 5.5:1, and carries deep-blue text at 5.5:1 in turn.
                   active
-                    ? 'bg-accent-600 text-white'
-                    : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900',
+                    ? 'bg-brand-400 text-brand-900'
+                    : 'text-brand-200 hover:bg-white/10 hover:text-white',
                 )}
               >
                 {item.label}

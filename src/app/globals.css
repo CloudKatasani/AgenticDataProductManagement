@@ -11,11 +11,37 @@
   --color-ink-700: #3d4759;
   --color-ink-800: #2b3242;
   --color-ink-900: #1b2030;
-  --color-accent-50: #eef4ff;
-  --color-accent-100: #dbe6ff;
-  --color-accent-500: #3b62d9;
-  --color-accent-600: #2f4fb5;
-  --color-accent-700: #26408f;
+
+  /*
+   * Brand palette. Anchored on the two Capgemini hexes — Capgemini Blue #0070ad and Vibrant Blue
+   * #12abdb — with the rest of the scale derived from them. Change these eleven values and the
+   * whole product re-skins; no component names a colour of its own.
+   *
+   * Contrast, measured, because AA is an invariant and not a preference:
+   *   white on brand-600  5.4:1   white on brand-900  14.5:1
+   *   brand-700 on white  7.4:1   brand-200 on brand-900  10.3:1   brand-300 on brand-900  5.7:1
+   * brand-400 is the vibrant blue: 2.7:1 on white, so it is decorative only — gradients, rules and
+   * focus rings on dark — and never carries text on a light background.
+   */
+  --color-brand-50: #e7f3f9;
+  --color-brand-100: #c5e4f2;
+  --color-brand-200: #c7dce8;
+  --color-brand-300: #7fa8c2;
+  --color-brand-400: #12abdb;
+  --color-brand-500: #0089c8;
+  --color-brand-600: #0070ad;
+  --color-brand-700: #005a8a;
+  --color-brand-800: #003d61;
+  --color-brand-900: #002b45;
+  --color-brand-950: #011e33;
+
+  /* The accent scale is the brand scale. One palette, so the chrome and the pages agree. */
+  --color-accent-50: #e7f3f9;
+  --color-accent-100: #c5e4f2;
+  --color-accent-500: #0089c8;
+  --color-accent-600: #0070ad;
+  --color-accent-700: #005a8a;
+
   --color-agent-50: #fbf4ec;
   --color-agent-200: #f0d9bd;
   --color-agent-600: #a4661a;
@@ -36,6 +62,21 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent-600);
   outline-offset: 2px;
+}
+
+/* On the dark brand bar the blue ring disappears, so focus switches to the vibrant blue. */
+.brand-bar :focus-visible {
+  outline-color: var(--color-brand-400);
+}
+
+/* The signature rule: Capgemini Blue running into Vibrant Blue. */
+.brand-rule {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-brand-600) 0%,
+    var(--color-brand-500) 45%,
+    var(--color-brand-400) 100%
+  );
 }
 
 .agent-proposed {

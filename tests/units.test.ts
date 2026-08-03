@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { canonicalise, contentHash } from '@/lib/hash'
 import { diffContent, summariseDiff } from '@/lib/artifacts/diff'
@@ -151,5 +152,67 @@ describe('prioritisation scoring', () => {
     expect(inputs.urgency).toBe(9)
     expect(inputs.reuse).toBeGreaterThan(0)
     expect(inputs.effort).toBe(4)
+  })
+})
+
+/**
+ * The brand palette is a contract, not decoration: the top layer inverts to a dark bar, so every
+ * colour pair it introduces has to clear WCAG AA before it ships. These read the real tokens out of
+ * globals.css, so re-skinning the product cannot quietly drop contrast below the line.
+ */
+function channel(value: number): number {
+  const c = value / 255
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+function luminance(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16)
+  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+}
+
+function contrast(a: string, b: string): number {
+  const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (lighter! + 0.05) / (darker! + 0.05)
+}
+
+function brandTokens(): Record<string, string> {
+  const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
+  const tokens: Record<string, string> = {}
+  for (const [, name, value] of css.matchAll(/--color-((?:brand|accent)-\d+):\s*(#[0-9a-f]{6});/g)) {
+    tokens[name!] = value!
+  }
+  return tokens
+}
+
+describe('brand palette', () => {
+  const tokens = brandTokens()
+
+  it('keeps the two anchor hexes the rest of the scale is derived from', () => {
+    expect(tokens['brand-600']).toBe('#0070ad')
+    expect(tokens['brand-400']).toBe('#12abdb')
+  })
+
+  it('drives the accent scale from the brand scale, so chrome and pages agree', () => {
+    expect(tokens['accent-600']).toBe(tokens['brand-600'])
+    expect(tokens['accent-700']).toBe(tokens['brand-700'])
+  })
+
+  it('clears AA for every text pair the dark top layer introduces', () => {
+    const bar = tokens['brand-900']!
+    expect(contrast('#ffffff', bar)).toBeGreaterThanOrEqual(4.5) // wordmark and user name
+    expect(contrast(tokens['brand-200']!, bar)).toBeGreaterThanOrEqual(4.5) // inactive nav item
+    expect(contrast(tokens['brand-300']!, bar)).toBeGreaterThanOrEqual(4.5) // nav group label
+    expect(contrast(tokens['brand-900']!, tokens['brand-400']!)).toBeGreaterThanOrEqual(4.5) // active item
+    expect(contrast('#ffffff', tokens['brand-800']!)).toBeGreaterThanOrEqual(4.5) // workspace select
+  })
+
+  it('clears AA for brand text on the light pages', () => {
+    expect(contrast('#ffffff', tokens['accent-600']!)).toBeGreaterThanOrEqual(4.5) // primary button
+    expect(contrast(tokens['accent-700']!, '#ffffff')).toBeGreaterThanOrEqual(4.5) // links
+    expect(contrast(tokens['accent-700']!, tokens['accent-50']!)).toBeGreaterThanOrEqual(4.5) // info badge
+  })
+
+  it('distinguishes the active nav item from the bar as a component, and the focus ring with it', () => {
+    expect(contrast(tokens['brand-400']!, tokens['brand-900']!)).toBeGreaterThanOrEqual(3)
   })
 })

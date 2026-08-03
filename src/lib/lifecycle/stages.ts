@@ -129,7 +129,7 @@ export const STAGES: StageDefinition[] = [
     approverRoles: ['DOMAIN_PRODUCT_OWNER', 'GOVERNANCE_COUNCIL'],
     quorum: 2,
     vetoRoles: ['DOMAIN_PRODUCT_OWNER'],
-    permittedAgents: ['critic'],
+    permittedAgents: ['charter', 'critic'],
     guideKey: 'stage-2',
     exitCriteria: (ctx) => {
       const charter = parseArtifact(ctx, 'charter', charterSchema)
@@ -436,7 +436,7 @@ export const STAGES: StageDefinition[] = [
     approverRoles: ['DATA_ARCHITECT', 'DATA_ENGINEER'],
     quorum: 2,
     vetoRoles: ['DATA_ARCHITECT'],
-    permittedAgents: ['critic'],
+    permittedAgents: ['architecture', 'critic'],
     guideKey: 'stage-7',
     exitCriteria: (ctx) => {
       const arch = parseArtifact(ctx, 'physical-architecture', physicalArchitectureSchema)

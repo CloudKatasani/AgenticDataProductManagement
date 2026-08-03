@@ -277,7 +277,12 @@ export async function dispositionProposalAction(
   const editedRaw = String(formData.get('editedValue') ?? '')
 
   const proposal = await prisma.agentProposal.findUniqueOrThrow({ where: { id: proposalId } })
-  const isComment = 'comment' in (JSON.parse(proposal.proposedValueJson) ?? {})
+  // A proposed value is any JSON, and plenty of them are scalars — a grain statement, a platform
+  // profile, a refresh strategy. `'comment' in "some string"` throws, so the type is checked
+  // before the key is, exactly as the read paths in queries/studio.ts already do.
+  const proposedValue = JSON.parse(proposal.proposedValueJson) as unknown
+  const isComment =
+    !!proposedValue && typeof proposedValue === 'object' && 'comment' in proposedValue
 
   try {
     if (isComment && action === 'ACCEPT') {

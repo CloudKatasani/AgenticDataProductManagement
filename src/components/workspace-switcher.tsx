@@ -32,16 +32,17 @@ export function WorkspaceSwitcher({
   return (
     <form action={formAction} className="flex items-center gap-2">
       <input type="hidden" name="from" value={pathname} />
-      <label htmlFor="workspace" className="text-xs text-ink-600">
+      <label htmlFor="workspace" className="text-xs text-brand-200">
         Workspace
       </label>
+      {/* Styled for the dark brand bar: the option list needs its own dark background too. */}
       <select
         key={activeSlug}
         id="workspace"
         name="slug"
         defaultValue={activeSlug}
         disabled={pending}
-        className="rounded-md border border-ink-300 bg-white px-2 py-1 text-sm disabled:opacity-60"
+        className="rounded-md border border-white/25 bg-brand-800 px-2 py-1 text-sm text-white disabled:opacity-60"
       >
         {workspaces.map((workspace) => (
           <option key={workspace.id} value={workspace.slug}>
@@ -52,12 +53,12 @@ export function WorkspaceSwitcher({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md border border-ink-300 px-2 py-1 text-xs hover:bg-ink-50 disabled:opacity-60"
+        className="rounded-md border border-white/30 px-2 py-1 text-xs text-white transition hover:bg-white/10 disabled:opacity-60"
       >
         {pending ? 'Switching…' : 'Switch'}
       </button>
       {error ? (
-        <span role="alert" className="text-xs text-rose-700">
+        <span role="alert" className="text-xs text-rose-200">
           {error}
         </span>
       ) : null}

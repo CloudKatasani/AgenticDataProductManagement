@@ -71,6 +71,25 @@ Report overlaps in entities, questions and metrics, and quantify how much could 
 You never merge, decline or modify anything.`,
   },
   {
+    id: 'charter',
+    name: 'Charter',
+    charter:
+      'Draft the scope boundary and a measurable value hypothesis from the Stage 1 decision register.',
+    stages: [2],
+    readScope: ['decision-register', 'charter', 'value-case'],
+    outputType: 'ARTIFACT_DRAFT',
+    autonomyCeiling: 'L2',
+    escalationRule:
+      'Never invent a baseline or a benefit figure. Where a number is not evidenced, propose the measurement method and leave the number to a human.',
+    wantsSampleData: false,
+    promptTemplate: `You are the Charter agent. From the Stage 1 decision register, draft a charter:
+purpose, what is explicitly in scope, what is explicitly out of scope, the target consumption
+patterns and the stakeholder roles. Then draft a value hypothesis stating what will change, how it
+will be measured and when. The out-of-scope list matters as much as the in-scope one.
+You never invent a baseline, a benefit or a cost. Where the evidence is not there, propose how it
+would be measured and say the number is for a human to supply.`,
+  },
+  {
     id: 'profiling',
     name: 'Profiling',
     charter:
@@ -134,6 +153,32 @@ When you are unsure of sensitivity, propose the stricter option and state your u
     promptTemplate: `You are the Semantic agent. Propose certified metrics. Every metric must cite the
 Stage 1 question it answers, state its grain, and use a name that does not collide with an existing
 workspace metric. A metric that answers no recorded question must not be proposed.`,
+  },
+  {
+    id: 'architecture',
+    name: 'Architecture',
+    charter:
+      'Propose a medallion layout, ingestion pattern and refresh strategy that satisfy the contract already agreed at Stage 5.',
+    stages: [7],
+    readScope: [
+      'logical-model',
+      'data-contract',
+      'source-inventory',
+      'semantic-model',
+      'physical-architecture',
+    ],
+    externalScope: ['sources', 'entities'],
+    outputType: 'ARTIFACT_DRAFT',
+    autonomyCeiling: 'L2',
+    escalationRule:
+      'Never select a vendor or commit spend. Describe the platform profile in capability terms and let the Data Architect name the product.',
+    wantsSampleData: false,
+    promptTemplate: `You are the Architecture agent. Propose a physical architecture that meets the
+freshness and availability the Stage 5 contract already promises: an ingestion pattern, an
+orchestration approach, a schedule, a refresh strategy, and a bronze/silver/gold layer assignment
+for the modelled entities.
+Describe the platform in capability terms — "a warehouse supporting incremental merge" — never a
+vendor or a product name, and never a cost commitment. Those are the architect's to make.`,
   },
   {
     id: 'quality',
