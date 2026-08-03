@@ -216,3 +216,30 @@ describe('brand palette', () => {
     expect(contrast(tokens['brand-400']!, tokens['brand-900']!)).toBeGreaterThanOrEqual(3)
   })
 })
+
+/**
+ * A generated Prisma client that predates the schema fails as `Cannot read properties of undefined
+ * (reading 'findMany')` — a message that says nothing about the cause. Every script that a
+ * developer might reach for after pulling a schema change has to regenerate the client, so the
+ * mismatch is impossible rather than merely documented.
+ */
+describe('developer scripts keep the Prisma client in step with the schema', () => {
+  const scripts = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  ).scripts as Record<string, string>
+
+  it('regenerates the client on every entry point that runs or migrates the app', () => {
+    for (const name of ['dev', 'build', 'db:push', 'db:seed']) {
+      const script = scripts[name]!
+      expect(script, `${name} must touch prisma`).toMatch(/prisma (generate|db push)/)
+      expect(script, `${name} must not skip generation`).not.toContain('--skip-generate')
+    }
+  })
+
+  it('uses no Unix-only shell built-ins, so the scripts run on Windows too', () => {
+    for (const [name, script] of Object.entries(scripts)) {
+      expect(script, `${name} uses rm`).not.toMatch(/(^|[&|;\s])rm\s/)
+      expect(script, `${name} uses cp`).not.toMatch(/(^|[&|;\s])cp\s/)
+    }
+  })
+})
