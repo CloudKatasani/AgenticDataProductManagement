@@ -11,27 +11,39 @@ Plan on **about 90 minutes**, most of it waiting for things to start.
 > repository yet** ([hosting-prerequisites.md](hosting-prerequisites.md): B3, B5, B6, and the
 > untested Postgres path C1). This guide deliberately avoids all of them. It runs the app **exactly
 > the way it runs on a laptop** (the tested path, with SQLite) on one EC2 server whose disk
-> survives restarts, and puts Amazon CloudFront in front for HTTPS. Nothing has to change in the
-> code.
+> survives restarts, with **Caddy** (a small, free web server) on the same machine providing HTTPS.
+> Nothing has to change in the code.
+>
+> **No CloudFront, load balancer, WAF or Certificate Manager is used.** The only AWS services you
+> need permission for are **EC2** (including Elastic IPs, security groups and EBS snapshots),
+> **IAM** (one role) and **Systems Manager Session Manager**.
 
 ---
 
 ## What you are building
 
 ```
- Your browser ──HTTPS──▶ CloudFront ──HTTP :3000──▶ EC2 server (Ubuntu)
-  (https://dxxxx.cloudfront.net)      (only CloudFront      ├─ Node.js 22 + pnpm
-                                       may connect)         ├─ ADPM (next start)
-                                                            └─ SQLite file on the EBS disk
+                                     EC2 server (Ubuntu), fixed Elastic IP
+ Your browser ──HTTPS :443──▶  ┌──────────────────────────────────────────────┐
+ (https://your-address)        │ Caddy  ── HTTPS certificate (Let's Encrypt,  │
+                               │   │        automatic and free)               │
+                               │   │        optional IP allow-list            │
+                               │   ▼ http://127.0.0.1:3000 (inside the server)│
+                               │ ADPM (Node.js 22, next start)                │
+                               │   └─ SQLite database file on the EBS disk    │
+                               └──────────────────────────────────────────────┘
  You (admin) ──AWS console──▶ Session Manager (a terminal in the browser; no SSH keys, no port 22)
 ```
+
+The app itself listens only inside the server. The only ports open to the internet are 80 and 443,
+and both are answered by Caddy.
 
 | Piece | What it is for | Rough cost (us-east-1, on-demand) |
 |---|---|---|
 | EC2 `t3.medium` (2 vCPU, 4 GB RAM) | Runs the app. 4 GB lets `pnpm build` finish without running out of memory | ~$30/month |
 | 30 GB gp3 EBS disk | Holds the code, the SQLite database and the workspace mirror | ~$2.40/month |
-| Elastic IP (public IPv4 address) | Gives the server a fixed address so CloudFront can always find it | ~$3.60/month |
-| CloudFront distribution | Free HTTPS address, hides the server | Usually pennies at demo traffic |
+| Elastic IP (public IPv4 address) | Gives the server a fixed address, so its web address never changes | ~$3.60/month |
+| Caddy + Let's Encrypt certificate | HTTPS | Free |
 | EBS snapshots (backups) | Daily copy of the disk | Under $1/month |
 
 **Expect roughly $35–40/month while the server runs.** Prices change and vary by region; check the
@@ -48,10 +60,23 @@ deployment can:
 - You will **generate a real `AUTH_SECRET`** (B2) — Part 6.
 - You will **replace every seeded password** with one only you know — Part 8. Do not skip it: until
   you do, anyone who finds the URL can sign in as Admin.
-- Optionally, you can **allow only your office's IP addresses** through CloudFront — Part 9.
+- Optionally, you can **allow only your office's IP addresses** — Part 9. Free, and strongly
+  recommended.
 
 Treat the result as a **private demo or workshop environment**, not a production system holding
 real company data.
+
+### Before you start: decide on the web address
+
+HTTPS certificates are issued to a **name**, not a bare IP address, so the app needs a hostname.
+Choose one now; you will use it in Part 7.
+
+| Option | What it looks like | When to choose it |
+|---|---|---|
+| **A. A name under a domain you or your company already own** | `adpm.yourcompany.com` | Best. You (or your IT team) add one DNS "A record" pointing at the server's Elastic IP. Works with any DNS provider; Route 53 is not required. |
+| **B. A free automatic name from sslip.io** | `3-91-12-34.sslip.io` (your Elastic IP with dashes) | No domain and no DNS work. sslip.io is a free public service that turns that name into that IP address. Fine for a demo; it is a third-party service you do not control. |
+
+If you are unsure, start with **B** — you can switch to A later by editing one line (Part 7.3).
 
 ---
 
@@ -97,7 +122,7 @@ closest to the people who will use the app — for example `us-east-1`, `eu-west
 `ap-south-1` (Mumbai) — and **check it is still selected before every step in Parts 3–5.** The most
 common beginner mistake is creating a resource in one region and then looking for it in another.
 
-(CloudFront and IAM are "Global" — the selector changes to Global on those pages. That is normal.)
+(IAM is "Global" — the selector changes to Global on IAM pages. That is normal.)
 
 ### 1.4 Set a budget alert
 
@@ -131,23 +156,27 @@ the server inside your browser. The server needs a permission (an **IAM role**) 
 
 1. Search for **EC2** and open it. **Check the region** (top-right).
 2. Left menu → **Network & Security → Security Groups** → **Create security group**.
-3. Security group name: `adpm-app-sg`. Description: `ADPM app - CloudFront only`.
+3. Security group name: `adpm-web-sg`. Description: `ADPM - HTTP and HTTPS only`.
    VPC: leave the **default VPC**.
-4. **Inbound rules → Add rule:**
-   - Type: **Custom TCP**
-   - Port range: `3000`
-   - Source: **Custom**, then click in the box next to it and type `cloudfront`. Choose the prefix
-     list named **`com.amazonaws.global.cloudfront.origin-facing`** (it starts with `pl-`).
-   - Description: `CloudFront to ADPM`
+4. **Inbound rules → Add rule** (twice):
+
+   | Type | Port | Source | Description |
+   |---|---|---|---|
+   | **HTTPS** | 443 | **Anywhere-IPv4** (`0.0.0.0/0`) | `ADPM over HTTPS` |
+   | **HTTP** | 80 | **Anywhere-IPv4** (`0.0.0.0/0`) | `Certificate checks and redirect to HTTPS` |
+
 5. **Outbound rules:** leave the default (all traffic allowed — the server needs it to download
-   software).
+   software and to obtain its certificate).
 6. **Create security group**.
 
-This means **only CloudFront** can talk to the app. Nobody can reach the server directly from the
-internet, and there is no SSH port open at all.
+Do **not** add port 22 (SSH) or port 3000. You will use Session Manager instead of SSH, and the app
+on port 3000 is only reachable from inside the server.
 
-> If you see an error about the rule count, the prefix list counts as many rules; make sure it is
-> the only inbound rule in this group.
+> **Why "Anywhere" and not "My IP"?** Let's Encrypt, which issues the free certificate, must be able
+> to reach ports 80/443 to prove you control the address — on first start and again roughly every
+> 60 days. If you restrict these ports to your own IP, the certificate cannot be issued or renewed.
+> Restricting *who can use the app* is done inside Caddy instead (Part 9), which leaves certificate
+> checks working.
 
 ### 3.2 The server (EC2 instance)
 
@@ -163,7 +192,7 @@ internet, and there is no SSH port open at all.
 6. **Network settings** → click **Edit**:
    - VPC: default. Subnet: **No preference**.
    - **Auto-assign public IP: Enable**.
-   - Firewall: **Select existing security group** → choose `adpm-app-sg`.
+   - Firewall: **Select existing security group** → choose `adpm-web-sg`.
 7. **Configure storage:** change `8` to **`30`** GiB, type **gp3**.
 8. Expand **Advanced details**:
    - **IAM instance profile:** choose `adpm-ec2-role`.
@@ -175,17 +204,14 @@ the refresh button).
 
 ### 3.3 Give it a fixed address (Elastic IP)
 
-Without this, the server's address changes every time it is stopped and started, and CloudFront
-would lose it.
+Without this, the server's IP address changes every time it is stopped and started, and the web
+address would stop pointing at it.
 
 1. Left menu → **Network & Security → Elastic IPs** → **Allocate Elastic IP address** →
    **Allocate**.
 2. Select the new address → **Actions → Associate Elastic IP address**.
 3. Resource type: **Instance**. Instance: `adpm-server` → **Associate**.
-4. Go back to **Instances**, select `adpm-server`, and in the **Details** tab copy the **Public IPv4
-   DNS** value. It looks like `ec2-3-91-12-34.compute-1.amazonaws.com`. **Save it — you need it in
-   Part 7.** (Make sure it contains the Elastic IP's numbers; refresh the page if it still shows the
-   old one.)
+4. **Write down the Elastic IP address** (for example `3.91.12.34`). You need it in Part 7.
 
 ---
 
@@ -218,13 +244,14 @@ and wait for it to finish before the next.
 
 ```bash
 sudo apt-get update && sudo apt-get -y upgrade
-sudo apt-get install -y git curl ca-certificates sqlite3
+sudo apt-get install -y git curl ca-certificates sqlite3 caddy
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node --version
 ```
 
-The last line should print `v22.x.x`. (If `upgrade` shows a purple screen asking about restarting
+The last line should print `v22.x.x`. This also installs **Caddy**, which you configure in Part 7.
+(If `upgrade` shows a purple screen asking about restarting
 services, press **Enter** to accept the defaults.)
 
 ### 5.2 Enable pnpm
@@ -307,7 +334,7 @@ After=network.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/AgenticDataProductManagement
 Environment=NODE_ENV=production
-ExecStart=/home/ubuntu/AgenticDataProductManagement/node_modules/.bin/next start -p 3000
+ExecStart=/home/ubuntu/AgenticDataProductManagement/node_modules/.bin/next start -H 127.0.0.1 -p 3000
 Restart=always
 RestartSec=5
 
@@ -323,64 +350,94 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/signin
 ```
 
 `status` should say **active (running)** and the last line should print **`200`**. The app is now
-running on the server — but you cannot reach it from your browser yet, because the firewall only
-lets CloudFront in.
+running on the server, listening only on `127.0.0.1` (inside the machine). You cannot reach it from
+your browser yet — Caddy, in Part 7, is what connects it to the outside world.
 
 ---
 
-## Part 7 — Put CloudFront (HTTPS) in front (15 minutes, mostly waiting)
+## Part 7 — Give it a web address with HTTPS (10 minutes)
 
-CloudFront gives you a free `https://xxxx.cloudfront.net` address with a valid certificate, and is
-the only thing allowed to talk to your server.
+### 7.1 Point the name at the server
 
-### 7.1 Create the distribution
+**Option B (sslip.io):** nothing to do in DNS. Your address is your Elastic IP with the dots
+replaced by dashes, followed by `.sslip.io`. For Elastic IP `3.91.12.34` it is
+**`3-91-12-34.sslip.io`**.
 
-1. Search for **CloudFront** → **Create distribution**.
-   - If the console offers a choice of **pricing plan**, choose **Pay as you go**.
-   - If it starts a step-by-step wizard, give the distribution a name such as `adpm`, choose origin
-     type **Other** (a custom origin), and look for **Customize origin settings** /
-     **Customize cache settings** to reach the options below. The names are the same.
-2. **Origin domain:** paste the **Public IPv4 DNS** from Part 3.3
-   (`ec2-…compute-1.amazonaws.com`). Do **not** paste an IP address, and do not choose any of the
-   suggested S3/load-balancer entries.
-3. **Protocol:** **HTTP only**. **HTTP port:** `3000`.
-4. **Response timeout** (under additional/advanced origin settings): `60` seconds, if shown.
-5. **Default cache behavior:**
-   - **Viewer protocol policy:** **Redirect HTTP to HTTPS**.
-   - **Allowed HTTP methods:** **GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE**. (The app submits
-     forms with POST; with the default GET/HEAD every button that saves something will fail.)
-   - **Cache key and origin requests:** **Cache policy and origin request policy (recommended)**.
-     - **Cache policy:** **CachingDisabled**.
-     - **Origin request policy:** **AllViewer**.
-   This combination makes CloudFront a pure pass-through: every page is personal to the signed-in
-   user, so nothing should be cached, and the app needs to see the browser's cookies and headers.
-6. **Web Application Firewall (WAF):** choose **Do not enable security protections** for now. (Part
-   9 explains how to add an IP allow-list later.)
-7. **Settings:** Price class **Use only North America and Europe** (cheapest; pick another if your
-   users are elsewhere). Leave **Alternate domain name** and **Custom SSL certificate** empty.
-8. **Create distribution**.
+**Option A (your own domain):** create one DNS record (you or your IT team):
 
-On the distribution's page, copy the **Distribution domain name** — something like
-`d1abcd2efgh3ij.cloudfront.net`. **Status** shows "Deploying" for 5–15 minutes.
+| Field | Value |
+|---|---|
+| Type | `A` |
+| Name / host | `adpm` (giving `adpm.yourcompany.com`) |
+| Value / points to | your Elastic IP, e.g. `3.91.12.34` |
+| TTL | `300` (5 minutes), or the default |
 
-### 7.2 Tell the app its public address
+If the domain happens to be in Route 53: **Route 53 → Hosted zones → your domain → Create record**,
+record name `adpm`, type **A**, value = the Elastic IP → **Create records**.
 
-Back in the **Session Manager** terminal (reconnect and `sudo su - ubuntu` if it closed). Replace
-the example domain with yours:
+Check the name points at the server, in the Session Manager terminal (`sudo su - ubuntu` first if
+you reconnected). Replace the example with your name:
+
+```bash
+getent hosts 3-91-12-34.sslip.io
+```
+
+It must print your Elastic IP. If it prints nothing or a different address, wait a few minutes (a
+new DNS record can take up to an hour) and try again. **Do not continue until it is right** —
+Caddy's certificate request will fail otherwise.
+
+### 7.2 Save the address in a variable
+
+So you only type it once (replace the example with your name, without `https://`):
+
+```bash
+ADPM_HOST=3-91-12-34.sslip.io
+```
+
+If the Session Manager tab closes before you finish Part 7, run this line again after
+reconnecting.
+
+### 7.3 Configure Caddy
+
+```bash
+sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
+${ADPM_HOST} {
+	reverse_proxy 127.0.0.1:3000
+}
+EOF
+
+cat /etc/caddy/Caddyfile
+sudo systemctl enable caddy
+sudo systemctl restart caddy
+sleep 15
+sudo systemctl status caddy --no-pager
+```
+
+`cat` should show your address on the first line (not an empty line — if it is empty, redo 7.2).
+`status` should say **active (running)**. On this first start Caddy obtains the HTTPS certificate
+from Let's Encrypt automatically, and renews it by itself from then on.
+
+(To switch address later — for example from sslip.io to your own domain — edit the first line with
+`sudo nano /etc/caddy/Caddyfile`, run `sudo systemctl restart caddy`, and update `AUTH_URL` in
+`.env` as in the next step.)
+
+### 7.4 Tell the app its public address
 
 ```bash
 cd ~/AgenticDataProductManagement
-echo 'AUTH_URL="https://d1abcd2efgh3ij.cloudfront.net"' >> .env
+echo "AUTH_URL=\"https://${ADPM_HOST}\"" >> .env
+tail -1 .env
 sudo systemctl restart adpm
 ```
 
-This tells the sign-in system that the app's public address is HTTPS, even though CloudFront talks
-to the server over plain HTTP inside AWS.
+The last line of `.env` should read `AUTH_URL="https://3-91-12-34.sslip.io"` (with your name).
 
-### 7.3 Open it
+### 7.5 Open it
 
-When the distribution's **Last modified** column shows a date instead of "Deploying", open
-`https://<your-distribution-domain>` in your browser. You should see the ADPM sign-in page.
+Open `https://<your-address>` in your browser. You should see the ADPM sign-in page with a valid
+padlock. Opening `http://<your-address>` should redirect to `https://` automatically.
+
+If it does not load, see Troubleshooting — the "can't be reached" and certificate rows.
 
 **Do not share the link yet** — the demo passwords are still `adpm`. Do Part 8 first.
 
@@ -418,7 +475,7 @@ unset NEW_PASSWORD
 (Typing the password shows nothing on screen — that is intentional.) It should print `Updated the
 password for N users.`
 
-Now check it worked: sign in at your CloudFront URL as `admin@adpm.local` with **`adpm`** — it must
+Now check it worked: sign in at your `https://` address as `admin@adpm.local` with **`adpm`** — it must
 be **rejected** — then with your new password — it must **succeed**.
 
 > **Known gap:** the sign-in page still says "Every account uses the password 'adpm'" and pre-fills
@@ -427,25 +484,46 @@ be **rejected** — then with your new password — it must **succeed**.
 
 ---
 
-## Part 9 — Optional: only allow your organisation's IP addresses
+## Part 9 — Recommended: only allow your organisation's IP addresses (5 minutes, free)
 
-Because ADPM has no real user management, the strongest extra protection is to make the site
-unreachable except from known networks (your office, your VPN).
+Because ADPM has no real user management, the strongest extra protection is to make the app
+unusable except from known networks (your office, your VPN, your home). Caddy can do this itself,
+so it costs nothing and does not interfere with certificate renewal.
 
-1. Find your public IP: search "what is my IP" in a browser. Ask your IT team for the office/VPN
-   ranges (they look like `203.0.113.0/24`).
-2. **CloudFront → Distributions → your distribution → Security** tab → **Edit** (or **Enable** AWS
-   WAF protections).
-3. Enable protections, then open the linked **WAF web ACL**.
-4. In **AWS WAF → IP sets** (set the region selector to **Global (CloudFront)**) → **Create IP
-   set**: name `adpm-allowed`, IP version IPv4, add each address as `x.x.x.x/32` (single address)
-   or the range your IT team gave you → **Create**.
-5. In the web ACL → **Rules → Add rules → Add my own rules** → Rule type **IP set**, IP set
-   `adpm-allowed`, action **Allow** → **Add rule**.
-6. Set the web ACL's **Default action** to **Block** → **Save**.
+1. Find the addresses to allow:
+   - Your own: search "what is my IP" in a browser (for example `198.51.100.7`). A single address is
+     written `198.51.100.7/32`.
+   - Office or VPN ranges: ask your IT team (they look like `203.0.113.0/24`).
+2. In Session Manager, edit the Caddy configuration:
 
-AWS WAF costs roughly $5/month for the web ACL plus $1/month per rule. Test from a phone on mobile
-data: it should be blocked (403).
+   ```bash
+   sudo nano /etc/caddy/Caddyfile
+   ```
+
+   Change it to the following — keep **your own address on the first line**, and list your allowed
+   addresses after `remote_ip`, separated by spaces:
+
+   ```
+   3-91-12-34.sslip.io {
+   	@outsiders not remote_ip 198.51.100.7/32 203.0.113.0/24
+   	respond @outsiders "Access denied" 403
+   	reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+   Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**. (Indent with a tab or spaces; either
+   works.)
+3. Apply and check:
+
+   ```bash
+   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+   ```
+
+   It should print `Valid configuration`. Then test from a phone on **mobile data** (not office
+   Wi-Fi): it should show `Access denied`. From an allowed network the app should work as before.
+
+If your own IP changes (common on home broadband), you will see `Access denied` too — repeat the
+steps with the new address.
 
 ---
 
@@ -471,8 +549,8 @@ snapshots is what makes that possible.
 
 **EC2 → Instances → adpm-server → Instance state → Stop.** You stop paying for the server (you
 still pay for the disk and Elastic IP, a few dollars a month). **Start** it again later; the app
-starts itself, and the Elastic IP keeps the address the same, so CloudFront keeps working after a
-minute or two.
+and Caddy start themselves, and the Elastic IP keeps the address the same, so the same link works
+after a minute or two.
 
 ### Updating to a newer version of ADPM
 
@@ -518,17 +596,16 @@ internet through its public IP, so no extra networking is needed.
 
 To stop all charges, delete in this order:
 
-1. **CloudFront:** select the distribution → **Disable** → wait until it shows Disabled (up to 15
-   minutes) → **Delete**.
-2. **WAF** (if you did Part 9): delete the web ACL, then the IP set.
-3. **EC2 → Instances:** `adpm-server` → **Instance state → Terminate**. This also deletes its disk
+1. **EC2 → Instances:** `adpm-server` → **Instance state → Terminate**. This also deletes its disk
    — download anything you want to keep first.
-4. **EC2 → Elastic IPs:** select the address → **Actions → Release Elastic IP addresses**.
+2. **EC2 → Elastic IPs:** select the address → **Actions → Release Elastic IP addresses**.
    *An Elastic IP that is no longer attached to anything still costs money — this is the item
    people forget.*
-5. **EC2 → Lifecycle Manager:** delete the policy. **EC2 → Snapshots:** delete the `adpm`
+3. **EC2 → Lifecycle Manager:** delete the policy. **EC2 → Snapshots:** delete the `adpm`
    snapshots.
-6. **EC2 → Security Groups:** delete `adpm-app-sg`. **IAM → Roles:** delete `adpm-ec2-role`.
+4. **EC2 → Security Groups:** delete `adpm-web-sg`. **IAM → Roles:** delete `adpm-ec2-role`.
+5. **DNS** (option A only): delete the `adpm` A record, so the name no longer points at an address
+   AWS may later give to someone else.
 
 The next month's bill should show nothing for these services.
 
@@ -540,11 +617,12 @@ The next month's bill should show nothing for these services.
 |---|---|
 | **Session Manager "Connect" is greyed out** | Wait 5–10 minutes after launch. Check the instance has `adpm-ec2-role` (**Actions → Security → Modify IAM role**), then reboot it. |
 | **`pnpm build` prints `Killed` or "heap out of memory"** | The instance has too little memory. Stop it → **Actions → Instance settings → Change instance type** → `t3.medium` or larger → Start, then rebuild. |
-| **CloudFront shows `504 Gateway Timeout` or "could not connect to origin"** | On the server, `sudo systemctl status adpm` must say running and `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/signin` must print 200. Then check: the security group allows port 3000 from the CloudFront prefix list; the origin is the **Public IPv4 DNS** (not an IP) with **HTTP only, port 3000**; and the Elastic IP is still associated. |
-| **CloudFront shows `403` with "Bad request" / "not configured to allow the HTTP request method"** | The behaviour's **Allowed HTTP methods** is still GET, HEAD. Edit the behaviour and choose GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE. |
-| **Sign-in page loads, but signing in returns to the sign-in page or errors** | Check `AUTH_URL` in `.env` is exactly `https://<your-distribution-domain>` (with `https://`, no trailing slash), restart the service, clear the site's cookies, try again. Also check the **origin request policy is AllViewer** — without it the login cookie never reaches the app. |
-| **Buttons that save something fail with an "invalid Server Actions request"** | Same cause: the origin request policy must be **AllViewer** so the app sees the browser's `Host` and `Origin` headers. |
-| **Pages look stale or show another user's data** | The cache policy must be **CachingDisabled**. Fix it, then **Invalidations → Create invalidation** with path `/*`. |
+| **Browser says "This site can't be reached" / connection refused or timed out** | Check, in order: the security group `adpm-web-sg` is attached to the instance and allows 80 and 443 from `0.0.0.0/0`; `sudo systemctl status caddy` says running; `getent hosts <your-address>` prints the Elastic IP; the Elastic IP is still associated with the instance. |
+| **Browser shows a certificate warning, or Caddy's log mentions "challenge failed" / "obtaining certificate"** | Read `sudo journalctl -u caddy -n 50 --no-pager`. Almost always: port 80 or 443 is not open to Anywhere, or DNS does not yet point at the Elastic IP. Fix that, then `sudo systemctl restart caddy`. If it mentions a **rate limit** while using sslip.io, switch to your own domain (option A) or retry later. |
+| **Your company network blocks the site, or the certificate can never be obtained** | Some organisations block sslip.io, or block servers from reaching Let's Encrypt. Use a name under your company's domain (option A), and ask IT whether the server may reach `acme-v02.api.letsencrypt.org` on port 443. |
+| **`502 Bad Gateway`** | Caddy is running but the app is not. Check `sudo systemctl status adpm` and `sudo journalctl -u adpm -n 50 --no-pager`; then `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/signin` must print 200. |
+| **`Access denied`** | The Part 9 allow-list does not include the network you are on. Check "what is my IP" and add it. |
+| **Sign-in page loads, but signing in returns to the sign-in page or errors** | Check `AUTH_URL` in `.env` is exactly `https://<your-address>` (with `https://`, no trailing slash) and matches the first line of `/etc/caddy/Caddyfile`. Run `sudo systemctl restart adpm`, clear the site's cookies, try again. |
 | **The app stopped after a reboot** | `sudo systemctl enable --now adpm`, then check `sudo journalctl -u adpm -n 50`. |
 | **"Can't reach database" / table does not exist** | You are not in `~/AgenticDataProductManagement`, or the seed never ran. `ls prisma/dev.db` should show the file. |
 | **Everyone gets signed out at once** | `AUTH_SECRET` in `.env` changed. Leave it alone from now on; users sign in again. |
@@ -563,12 +641,17 @@ Stated plainly, so nobody is surprised later:
 - **SQLite, not a managed database.** It is the store the application is tested on, and it is
   correct for one server. Moving to RDS Postgres is the path in [AWS.md](AWS.md), after the code
   changes in [hosting-prerequisites.md](hosting-prerequisites.md).
-- **A `cloudfront.net` address.** Using your own domain name (e.g. `adpm.yourcompany.com`) needs a
-  certificate in AWS Certificate Manager (in `us-east-1`) and a DNS record; it is not covered here.
+- **The server faces the internet directly.** Only ports 80 and 443 are open and both are handled
+  by Caddy, but there is no AWS-managed firewall or load balancer in front. The Part 9 allow-list is
+  what keeps strangers out; use it.
+- **Option B depends on sslip.io**, a free third-party service. If it is unavailable, the name stops
+  resolving. Use your own domain (option A) for anything longer-lived than a demo.
 - **Not verified end to end on AWS by the author of this guide.** The commands that run on the
   server are the project's own documented laptop commands. The password-replacement script was run
-  against a locally seeded database, and sign-in was tested through a local stand-in for CloudFront
-  (HTTPS in, plain HTTP to port 3000, browser headers passed through, `AUTH_URL` set). Real
-  CloudFront, the security group and Session Manager were not exercised. The console click-paths are written against the AWS
+  against a locally seeded database. The app was run with the same `next start -H 127.0.0.1` command
+  behind Caddy 2 using this guide's Caddyfile (with a locally issued certificate instead of
+  Let's Encrypt): sign-in over HTTPS, the HTTP-to-HTTPS redirect, the Part 9 allow-list returning
+  403, and port 3000 being unreachable from outside were all confirmed. A real Let's Encrypt
+  certificate, sslip.io, the AWS security group and Session Manager were not exercised. The console click-paths are written against the AWS
   console as of late 2026; AWS renames buttons from time to time, so if a label differs, look for
   the closest equivalent — the settings themselves do not change.

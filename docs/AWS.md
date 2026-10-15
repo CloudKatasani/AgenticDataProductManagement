@@ -12,7 +12,7 @@ environment.
 
 **New to AWS and want it running today, with no code changes?** Follow
 [AWS_CONSOLE_GUIDE.md](AWS_CONSOLE_GUIDE.md) instead: a click-by-click console walkthrough for a
-single EC2 server with SQLite behind CloudFront.
+single EC2 server running SQLite, with Caddy providing HTTPS (no CloudFront needed).
 
 For local use, read [RUNNING.md](../RUNNING.md). For the operational reference behind both, see
 [DEPLOYMENT.md](DEPLOYMENT.md). Sibling guides: [Azure](AZURE.md), [GCP](GCP.md).
