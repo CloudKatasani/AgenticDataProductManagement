@@ -10,6 +10,10 @@ environment.
 > cloud needs. **None of those changes are in the repository.** The `B*` and `C*` identifiers used
 > below refer to it.
 
+**New to AWS and want it running today, with no code changes?** Follow
+[AWS_CONSOLE_GUIDE.md](AWS_CONSOLE_GUIDE.md) instead: a click-by-click console walkthrough for a
+single EC2 server with SQLite behind CloudFront.
+
 For local use, read [RUNNING.md](../RUNNING.md). For the operational reference behind both, see
 [DEPLOYMENT.md](DEPLOYMENT.md). Sibling guides: [Azure](AZURE.md), [GCP](GCP.md).
 
