@@ -397,7 +397,26 @@ ADPM_HOST=3-91-12-34.sslip.io
 If the Session Manager tab closes before you finish Part 7, run this line again after
 reconnecting.
 
-### 7.3 Configure Caddy
+### 7.3 Install and configure Caddy
+
+First make sure Caddy is installed (harmless if Part 5 already installed it):
+
+```bash
+sudo apt-get update && sudo apt-get install -y caddy
+caddy version
+```
+
+`caddy version` should print a version such as `v2.6.2`. If `apt-get` says **Unable to locate
+package caddy**, install it from Caddy's own repository instead:
+
+```bash
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update && sudo apt-get install -y caddy
+```
+
+Then write its configuration and start it:
 
 ```bash
 sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
@@ -623,6 +642,7 @@ The next month's bill should show nothing for these services.
 | **`502 Bad Gateway`** | Caddy is running but the app is not. Check `sudo systemctl status adpm` and `sudo journalctl -u adpm -n 50 --no-pager`; then `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/signin` must print 200. |
 | **`Access denied`** | The Part 9 allow-list does not include the network you are on. Check "what is my IP" and add it. |
 | **Sign-in page loads, but signing in returns to the sign-in page or errors** | Check `AUTH_URL` in `.env` is exactly `https://<your-address>` (with `https://`, no trailing slash) and matches the first line of `/etc/caddy/Caddyfile`. Run `sudo systemctl restart adpm`, clear the site's cookies, try again. |
+| **`/etc/caddy/Caddyfile: No such file or directory` or `Unit caddy.service not found`** | Caddy is not installed. Run the install commands at the start of Part 7.3, then repeat the rest of 7.3. |
 | **The app stopped after a reboot** | `sudo systemctl enable --now adpm`, then check `sudo journalctl -u adpm -n 50`. |
 | **"Can't reach database" / table does not exist** | You are not in `~/AgenticDataProductManagement`, or the seed never ran. `ls prisma/dev.db` should show the file. |
 | **Everyone gets signed out at once** | `AUTH_SECRET` in `.env` changed. Leave it alone from now on; users sign in again. |
